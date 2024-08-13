@@ -1,0 +1,291 @@
+---
+title: "1_JH002_report"
+author: "Yang Lyu"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    keep_tex: true
+    latex_engine: pdflatex
+    fig_caption: yes
+    highlight: haddock
+    number_sections: yes
+---
+
+```{r,setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warnings =F, message=F)
+options(knitr.table.format = 'markdown',encoding = 'UTF-8',warnings =F, message=F ) 
+ 
+```
+
+
+```{r,include=F}
+rm(list=ls())
+```
+
+
+```{r,include=F}
+# define sample information and file location
+PT_ID="JH-2-051"
+# setup your personal path
+Path="/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
+Rcode_path=file.path(Path,"Rcode",PT_ID)
+Rdata_path=file.path(Path,"Rdata",PT_ID )
+Rawdata_path=file.path(Path,"Rawdata")
+Process_path=file.path(Path,"Process")
+WEX_rawdata_path=file.path(Rawdata_path,"WEX")
+Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
+Reference_path="/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
+synapser::synLogin(email="",password = "")
+
+dir(Public_database_path)
+dir.create(Rdata_path)
+dir.create(Rawdata_path)
+dir.create(Process_path)
+#output_dir="/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Output/JH-2-002"
+# download Hg38_gene_chr_position.csv from synapse syn26376828" in your reference pathay
+Ref_path=file.path(Reference_path,"Hg38_gene_chr_position.csv" )
+Gene_chr_info=read.csv(Ref_path,row.names = 1)
+```
+
+
+```{r,include=F}
+library(dplyr)
+library(ggplot2)
+library(synapser)
+library(dplyr)
+library(readr)
+library(tidyr)
+
+```
+
+
+
+```{r,include=F}
+Gene_annotation_for_CNV=function(Data) {
+  
+  edb=EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86
+  
+  library(ensembldb)
+  #data_list=list()
+  Data$Gene_list=""
+  for (i in 1:nrow(Data)){
+    nchr=Data[i,]$Chromosome
+    
+    chr=gsub("chr","" ,nchr)
+    Start=Data[i,]$Start
+    End=Data[i,]$End
+    
+    grf =GRangesFilter(GenomicRanges::GRanges(chr, ranges =IRanges:: IRanges(Start,End)), type = "any")
+    ## Query genes:
+    gn <- genes(edb, filter = grf)
+    Genelist=gn%>%as.data.frame() %>%dplyr::filter(gene_biotype=="protein_coding") %>%.$gene_name
+    
+    #return(Genelist)
+    # return(Data[i,"Gene_list"])
+    if (length(Genelist>0)) {
+      Data[i,"Gene_list"]=toString (Genelist)
+      #data_list[[i]]=Genelist
+    }
+  }
+  
+  return(Data)
+  
+}
+
+
+Normal_gene_WEX_CN_2=function (WEX_germline_path) {
+  # Internal_bin=1000
+  # loading normal germline data (chr17)
+ 
+  #Sample=list.files(WEX_germline_path,recursive = F) %>% .[grepl(Patient_ID,.)]
+  #File_path=file.path(WEX_germline_path,Sample)
+  seg_file=list.files(WEX_germline_path,pattern = "_segments.tsv",full.names = T) 
+  SEG_data=readr::read_tsv(seg_file,show_col_types = FALSE)%>%tidyr::separate(ID,c("Type","Chromosome","Start","End"),sep="_")
+  SEG_data$Start=as.numeric(SEG_data$Start)
+  SEG_data$End=as.numeric(SEG_data$End)
+  # ALT_seg=SEG_data%>%dplyr::filter(ALT!=".")
+  
+  Gene_name=Gene_annotation_for_CNV(SEG_data)
+  colnames( Gene_name)[grepl("NP",colnames( Gene_name))]="NP"
+  
+  Gene_name2=Gene_name%>%dplyr::filter(NP>100)
+  # fILTER BY NP
+  
+  return(Gene_name2)
+  #Interval_file=file.path(File_path,paste0(Sample,"_intervals.tsv") )  
+  #Interval_file=list.files(WEX_germline_path,pattern = "_intervals.tsv",full.names = T) 
+  
+}
+
+
+
+
+
+
+listSynapseFiles <- function(synID) {
+  # Retrieve all children under the given Synapse ID
+  items <- synapser::synGetChildren(synID)%>%as.list()
+  
+  # Initialize a list to hold file information
+  fileList <- list()
+  
+  # Iterate through each item
+  for (i in 1:length(items)) {
+     item=items[[i]]
+    # Add the file to the list
+      fileList[[i]] =data.frame(name =item$name, synid = item$id)
+    
+  }
+  
+  return(do.call("rbind", fileList))
+}
+```
+
+
+```{r}
+
+# Function to process Germline CNV data for a given patient ID
+processGermlineCNV <- function(Patient_ID, Process_Path, Sample_anno) {
+  # Filter sample information for the given patient ID
+  PT_Sample_info <- Sample_anno %>% 
+                    dplyr::filter(individualID == Patient_ID)
+
+  # Filter to get only 'Normal' samples
+  Normal_samples <- PT_Sample_info %>% 
+                    dplyr::filter(tumorType == "Normal")
+ 
+  # Initialize a list to hold Germline CNV data
+  Germline_CNV <- list()
+  # Loop through each batch identifier in Normal samples
+  for (i in Normal_samples$batch) {
+    if (grepl("JH", i)) {
+      JH_Germline_syn <- "syn61986445"
+      Germline_CNV[[i]] <- listSynapseFiles(JH_Germline_syn) %>% 
+                           dplyr::filter(grepl(Patient_ID, name))
+    } else if (grepl("WU", i)) {
+      WU_Germline_syn <- "syn61986581"
+      Germline_CNV[[i]] <- listSynapseFiles(WU_Germline_syn) %>% 
+                           dplyr::filter(grepl(Patient_ID, name))
+    }
+  }
+ 
+  # Combine lists into one dataframe
+  Germline_CNV_combine <- do.call("rbind", Germline_CNV)
+ 
+  output=list()
+  # Iterate through each Synapse ID in the combined data
+  for (i in Germline_CNV_combine$synid) {
+    fileEntity <- synapser:: synGet(i)
+    filename <- fileEntity$properties$name
+    Download_path <- file.path(Process_Path, "Germline_CNV")
+    filepath <- file.path(Download_path, filename)
+    synapser::synGet(i, downloadLocation = Download_path)
+    SEG_data <- readr::read_tsv(filepath, show_col_types = FALSE) %>%
+                tidyr::separate(ID, c("Type", "Chromosome", "Start", "End"), sep = "_") %>%
+                mutate(Start = as.numeric(Start), End = as.numeric(End))
+    
+    Gene_name <- Gene_annotation_for_CNV(SEG_data)
+    
+    colnames(Gene_name)=gsub(".*\\.","",colnames(Gene_name))
+    # remove load reads data
+    Gene_name2 <- Gene_name %>% dplyr::filter(NP > 100)%>%dplyr::filter(ALT!=".")
+    # Returning filtered data based on NP
+    output[[filename]]=Gene_name2%>%mutate(Filename=filename)
+  }
+  
+ 
+ Output2=do.call(rbind,output)
+}
+
+process_somatic_CNV <- function(Patient_ID, Process_path) {
+
+  # Synapse ID for somatic CNV
+  Somatic_CNV_syn <- "syn61986677"
+  
+  # List and filter files in Synapse
+  filesInSynapse <- listSynapseFiles(Somatic_CNV_syn) %>%
+    dplyr::filter(grepl(Patient_ID, name))
+  Samples <- gsub(".af.igv.seg|.cr.igv.seg", "", filesInSynapse$name) %>%
+    unique()
+  
+  # Initialize list for results
+  RDR_BAF_list <- list()
+  
+  # Process each sample
+  for (i in Samples) {
+    Tumor_name <- i
+    synID <- dplyr::filter(filesInSynapse, grepl(i, name)) %>% .$synid
+    Download_path <- file.path(Process_path, "Somatic_CNV")
+    
+    # Download and process files
+    for (s in synID) {
+      synapser::synGet(s, downloadLocation = Download_path)
+    }
+    
+    BAF_Seg <- readr::read_tsv(file.path(Download_path, paste0(Tumor_name, ".af.igv.seg"))) %>%
+      as.data.frame() %>%
+      dplyr::rename(BAF = Segment_Mean)
+    RDR_Seg <- readr::read_tsv(file.path(Download_path, paste0(Tumor_name, ".cr.igv.seg"))) %>%
+      as.data.frame() %>%
+      dplyr::rename(LOG2_RDR = Segment_Mean) %>%
+      mutate(RDR = 2^(as.numeric(LOG2_RDR)))
+    RDR_BAF <- RDR_Seg %>%
+      left_join(., BAF_Seg[, c(1, 2, 3, 4, 6)]) %>%
+      mutate(BAF = ifelse(is.na(BAF), 0, BAF))
+    
+    RDR_BAF_list[[i]] <- RDR_BAF
+  }
+  
+  return(RDR_BAF_list)
+}
+```
+
+
+```{r}
+# Sample annotation table 
+Sample_anno_syn="syn52392422"
+annotation_filename="Round1_4_annotation_09062023.xlsx"
+if (!file.exists(file.path(Rawdata_path,annotation_filename))){
+ synapser::synGet(Sample_anno_syn,downloadLocation =Rawdata_path)
+
+}
+Sample_anno=readxl::read_excel(file.path(Rawdata_path,annotation_filename))
+specimen_id_syn="syn52601686"
+Specimen_ID_filefname="Simple_sample_map_10062023.xlsx"
+if (!file.exists(file.path(Rawdata_path,Specimen_ID_filefname))){
+
+  synapser::synGet(specimen_id_syn,downloadLocation =Rawdata_path)
+ 
+}
+ Sample_specimen_ID_anno=readxl::read_excel(file.path(Rawdata_path,Specimen_ID_filefname))
+# Choose sample information from annotation table
+
+DNA_data=Sample_anno%>%dplyr::filter(grepl("WEX",Assay))%>%mutate(tumorType=gsub("normal","Normal",tumorType))
+Specimen_ID_DNA=Sample_specimen_ID_anno%>%dplyr::filter(assay=="Whole Exome Sequencing")
+
+All_Sample_anno=DNA_data%>%left_join(.,Specimen_ID_DNA,by=c("individualID","batch","tissue","tumorType"))
+```
+
+
+```{r}
+PT_Sample_info=All_Sample_anno%>%dplyr::filter(individualID==PT_ID)
+Tumor_sample=PT_Sample_info%>%dplyr::filter(tumorType!="Normal")
+```
+
+
+```{r}
+
+if (! file.exists(file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))) {
+
+  Germline_CNV=processGermlineCNV(PT_ID, Process_path, All_Sample_anno)
+  Somatic_CNV=process_somatic_CNV (PT_ID,Process_path=Process_path)
+  save(Germline_CNV,Somatic_CNV,file=file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+}
+```
+
+
+```{r}
+knitr::knit_exit()
+```
+
+
