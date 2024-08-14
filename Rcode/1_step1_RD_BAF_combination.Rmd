@@ -179,7 +179,7 @@ processGermlineCNV <- function(Patient_ID, Process_Path, Sample_anno) {
     filename <- fileEntity$properties$name
     Download_path <- file.path(Process_Path, "Germline_CNV")
     filepath <- file.path(Download_path, filename)
-    synapser::synGet(i, downloadLocation = Download_path)
+    synapser::synGet(i, downloadLocation = Download_path,ifcollision="keep.local")
     SEG_data <- readr::read_tsv(filepath, show_col_types = FALSE) %>%
                 tidyr::separate(ID, c("Type", "Chromosome", "Start", "End"), sep = "_") %>%
                 mutate(Start = as.numeric(Start), End = as.numeric(End))
@@ -219,7 +219,7 @@ process_somatic_CNV <- function(Patient_ID, Process_path) {
     
     # Download and process files
     for (s in synID) {
-      synapser::synGet(s, downloadLocation = Download_path)
+      synapser::synGet(s, downloadLocation = Download_path,ifcollision="keep.local")
     }
     
     BAF_Seg <- readr::read_tsv(file.path(Download_path, paste0(Tumor_name, ".af.igv.seg"))) %>%
@@ -246,7 +246,7 @@ process_somatic_CNV <- function(Patient_ID, Process_path) {
 Sample_anno_syn="syn52392422"
 annotation_filename="Round1_4_annotation_09062023.xlsx"
 if (!file.exists(file.path(Rawdata_path,annotation_filename))){
- synapser::synGet(Sample_anno_syn,downloadLocation =Rawdata_path)
+ synapser::synGet(Sample_anno_syn,downloadLocation =Rawdata_path,ifcollision="keep.local")
 
 }
 Sample_anno=readxl::read_excel(file.path(Rawdata_path,annotation_filename))
@@ -254,7 +254,7 @@ specimen_id_syn="syn52601686"
 Specimen_ID_filefname="Simple_sample_map_10062023.xlsx"
 if (!file.exists(file.path(Rawdata_path,Specimen_ID_filefname))){
 
-  synapser::synGet(specimen_id_syn,downloadLocation =Rawdata_path)
+  synapser::synGet(specimen_id_syn,downloadLocation =Rawdata_path,ifcollision="keep.local")
  
 }
  Sample_specimen_ID_anno=readxl::read_excel(file.path(Rawdata_path,Specimen_ID_filefname))
