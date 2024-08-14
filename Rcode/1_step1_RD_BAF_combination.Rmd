@@ -1,6 +1,6 @@
 ---
-title: "1_JH002_report"
-author: "Yang Lyu"
+title: "`r paste0(config::get(file = 'Step1_config.yml')$PT_ID, '_data_curation')`"
+author: "`r config::get(file = 'Step1_config.yml')$document$author`"
 date: "`r Sys.Date()`"
 output:
   pdf_document:
@@ -9,42 +9,64 @@ output:
     fig_caption: yes
     highlight: haddock
     number_sections: yes
+
+knit: (
+  function(inputFile, encoding) {
+    config=config::get(file = 'Step1_config.yml') 
+    
+    pSubTitle <- paste0(config$PT_ID, "_data_curation.pdf")
+    
+    DIR=file.path(config$base_output_dir, config$PT_ID)
+    
+    rmarkdown::render( 
+      input       = inputFile, 
+      encoding    = encoding, 
+      output_file = pSubTitle,
+      output_dir =DIR )})
 ---
-
-```{r,setup, include=FALSE}
-knitr::opts_chunk$set(echo = F,warnings =F, message=F)
-options(knitr.table.format = 'markdown',encoding = 'UTF-8',warnings =F, message=F ) 
- 
-```
-
 
 ```{r,include=F}
 rm(list=ls())
 ```
 
 
+```{r,setup, include=FALSE}
+config <- config::get(file = 'Step1_config.yml')
+# 
+
+knitr::opts_chunk$set(echo = F,warnings =F, message=F,include=F)
+options(knitr.table.format = 'markdown',encoding = 'UTF-8',warnings =F, message=F ) 
+# Check and create output directory if it doesn't exist
+output_dir <- file.path(config$base_output_dir, config$PT_ID)
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+```
+
+
 ```{r,include=F}
-# define sample information and file location
-PT_ID="JH-2-051"
-# setup your personal path
-Path="/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
+PT_ID <- config$PT_ID
+Path <- config$Path
+Email <- config$Email
+Reference_path <- config$Reference_path
 Rcode_path=file.path(Path,"Rcode",PT_ID)
 Rdata_path=file.path(Path,"Rdata",PT_ID )
-Rawdata_path=file.path(Path,"Rawdata")
-Process_path=file.path(Path,"Process")
-WEX_rawdata_path=file.path(Rawdata_path,"WEX")
+Rawdata_path=file.path(Path,"Rawdata",PT_ID)
+Process_path=file.path(Path,"Processed")
 Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
 Reference_path="/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
-synapser::synLogin(email="",password = "")
-
+Password =rstudioapi::askForPassword("Enter your synaspe password:")
+synapser::synLogin(email=Email,password =Password)
+```
+```{r,include=F}
 dir(Public_database_path)
 dir.create(Rdata_path)
 dir.create(Rawdata_path)
 dir.create(Process_path)
 #output_dir="/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Output/JH-2-002"
 # download Hg38_gene_chr_position.csv from synapse syn26376828" in your reference pathay
-Ref_path=file.path(Reference_path,"Hg38_gene_chr_position.csv" )
-Gene_chr_info=read.csv(Ref_path,row.names = 1)
+
 ```
 
 
@@ -61,6 +83,10 @@ library(tidyr)
 
 
 ```{r,include=F}
+synapser::synGet("syn26376828",downloadLocation = Reference_path,ifcollision="keep.local")
+Ref_path=file.path(Reference_path,"Hg38_gene_chr_position.csv" )
+Gene_chr_info=read.csv(Ref_path,row.names = 1)
+
 Gene_annotation_for_CNV=function(Data) {
   
   edb=EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86
@@ -139,10 +165,6 @@ listSynapseFiles <- function(synID) {
   
   return(do.call("rbind", fileList))
 }
-```
-
-
-```{r}
 
 # Function to process Germline CNV data for a given patient ID
 processGermlineCNV <- function(Patient_ID, Process_Path, Sample_anno) {
@@ -240,24 +262,18 @@ process_somatic_CNV <- function(Patient_ID, Process_path) {
 }
 ```
 
-
 ```{r}
 # Sample annotation table 
 Sample_anno_syn="syn52392422"
 annotation_filename="Round1_4_annotation_09062023.xlsx"
-if (!file.exists(file.path(Rawdata_path,annotation_filename))){
- synapser::synGet(Sample_anno_syn,downloadLocation =Rawdata_path,ifcollision="keep.local")
+synapser::synGet(Sample_anno_syn,downloadLocation =Rawdata_path,ifcollision="keep.local")
 
-}
 Sample_anno=readxl::read_excel(file.path(Rawdata_path,annotation_filename))
 specimen_id_syn="syn52601686"
 Specimen_ID_filefname="Simple_sample_map_10062023.xlsx"
-if (!file.exists(file.path(Rawdata_path,Specimen_ID_filefname))){
-
-  synapser::synGet(specimen_id_syn,downloadLocation =Rawdata_path,ifcollision="keep.local")
+synapser::synGet(specimen_id_syn,downloadLocation =Rawdata_path,ifcollision="keep.local")
  
-}
- Sample_specimen_ID_anno=readxl::read_excel(file.path(Rawdata_path,Specimen_ID_filefname))
+Sample_specimen_ID_anno=readxl::read_excel(file.path(Rawdata_path,Specimen_ID_filefname))
 # Choose sample information from annotation table
 
 DNA_data=Sample_anno%>%dplyr::filter(grepl("WEX",Assay))%>%mutate(tumorType=gsub("normal","Normal",tumorType))
@@ -272,6 +288,10 @@ PT_Sample_info=All_Sample_anno%>%dplyr::filter(individualID==PT_ID)
 Tumor_sample=PT_Sample_info%>%dplyr::filter(tumorType!="Normal")
 ```
 
+```{r,include=T}
+knitr::kable(PT_Sample_info[,c(1:6)],caption = "Sample information")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
 
 ```{r}
 
@@ -282,6 +302,7 @@ if (! file.exists(file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.
   save(Germline_CNV,Somatic_CNV,file=file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
 }
 ```
+
 
 
 ```{r}
