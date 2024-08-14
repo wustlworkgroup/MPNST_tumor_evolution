@@ -1,0 +1,9 @@
+default:
+  document:
+     author: "Yang Lyu"   
+  PT_ID: "JH-2-009"
+  Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
+  Email: "lyu.yang@wustl.edu"
+  Reference_path: "/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
+  base_output_dir: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Report"
+  yml: 
