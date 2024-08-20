@@ -1,0 +1,36 @@
+default:
+  document:
+    author: "Yang Lyu"
+  PT_ID: "JH-2-002"
+  Sample_number: 6
+  Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
+  Email: "lyu.yang@wustl.edu"
+  Reference_path: "/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
+  base_output_dir: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Report"
+  genomic_settings:
+    Cluster_number: 9 # need reset when cluster result is not good
+    normal:
+      Norm_RDR: [0.85, 1.08]
+      BAF: [0.4, 0.5]
+    LOH:
+      Norm_RDR: [0.85, 1.08]
+      BAF: [0, 0.4]
+    trisomy:
+      Norm_RDR: [1.08, 1.37]
+      BAF: [0, 0.4]
+    tetrasomy:
+      Norm_RDR: [1.08, 1.9]
+      BAF: [0.4, 0.5]
+    tetrasomy_LOH:
+      Norm_RDR: [1.37, 1.9]
+      BAF: [0, 0.4]
+    het_loss:
+      Norm_RDR: [0, 1]
+      BAF: [0.1, 0.4]
+    homo_loss:
+      Norm_RDR: [0, 0.85]
+      BAF: [0.1, 0.4]
+  Clonality_density:
+    bandwith_1: 0.03
+    bandwith_2: 0.03
+
