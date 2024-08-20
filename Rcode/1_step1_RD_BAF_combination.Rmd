@@ -299,7 +299,7 @@ if (! file.exists(file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.
 
   Germline_CNV=processGermlineCNV(PT_ID, Process_path, All_Sample_anno)
   Somatic_CNV=process_somatic_CNV (PT_ID,Process_path=Process_path)
-  save(Germline_CNV,Somatic_CNV,file=file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+  save(PT_Sample_info,Germline_CNV,Somatic_CNV,file=file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
 }
 ```
 
