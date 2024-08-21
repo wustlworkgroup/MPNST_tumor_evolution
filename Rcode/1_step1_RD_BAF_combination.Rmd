@@ -292,14 +292,26 @@ Tumor_sample=PT_Sample_info%>%dplyr::filter(tumorType!="Normal")
 knitr::kable(PT_Sample_info[,c(1:6)],caption = "Sample information")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
 ```
 
+```{r,include=F}
+Germline_CNV=processGermlineCNV(PT_ID, Process_path, All_Sample_anno)
+ Somatic_CNV=process_somatic_CNV (PT_ID,Process_path=Process_path)
+Samples=data.frame(Sample_name=names(Somatic_CNV),Sample_n=1:length(names(Somatic_CNV)))
+```
+
+
+```{r,include=T}
+knitr::kable(Samples,caption = "Samples for anlaysis")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+               
+```
+
 
 ```{r}
 
-if (! file.exists(file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))) {
+if (! file.exists(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))) {
 
-  Germline_CNV=processGermlineCNV(PT_ID, Process_path, All_Sample_anno)
-  Somatic_CNV=process_somatic_CNV (PT_ID,Process_path=Process_path)
-  save(PT_Sample_info,Germline_CNV,Somatic_CNV,file=file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+ 
+ 
+  save(PT_Sample_info,Germline_CNV,Somatic_CNV,file=file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
 }
 ```
 
