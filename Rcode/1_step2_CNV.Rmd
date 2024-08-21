@@ -81,7 +81,8 @@ load("/Volumes/lyu.yang/MAC_1/R/Public_database/Reference/Chrosmome_cytobank.rda
 
 ```{r}
 # The data from step1
-load(file.path(Process_path,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+dir(Process_path)
+load(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
 ```
 
 ```{r}
@@ -107,7 +108,7 @@ dir.create(Process_path)
 
 
 
-###############################################################################################################3
+###############################################################################################################
 ```{r}
 library(karyoploteR)
 library(GenomicRanges)
@@ -1027,6 +1028,7 @@ calculate_subclone_purities <- function(data) {
 ```
 
 
+
 # Germline CNV 
 ```{r,include=F}
 Germline_CNV_ALT=Germline_CNV%>%mutate(Sample=gsub("_segments.tsv","" ,Filename))%>%mutate(CN_name=ifelse(grepl("NF1",Gene_list),"NF1" ,gsub(",.*","" ,Gene_list)))%>%mutate(CN_define=ifelse(CN==1,"microdeletion",ifelse(CN==0,"Homo_deletion",ifelse(CN==3,"Trisomy",ifelse(CN=4,"Tetrasomey",CN))))) %>%   mutate(name=paste0(CN_name,"_",CN_define))%>%.[,c("Sample","Chromosome","Start","End","ALT","CN","Gene_list","name" )]
@@ -1068,36 +1070,76 @@ Data_filter=Somatic_CNV[[Sample_name]]%>%Gene_annotation_for_CNV_2(.)
 ```
 
 # Tumor copy number balance checking
-```{r,include=T}
+```{r,include=T,message=F}
 # Tumor clonality based on clustering
 #Kmenas for clustering seg data after removing germline CNV**
 #Read depth data from GATK**
 #Define gain and loss by Kmeans**
 #Tumor_purity: "1-RDR_homo_deletion/Bias" **
 #Ploidy: "1/Normal_RDR; RDR_bias=Normal_RDR"**
-Out=density_with_hdi (Data_filter$RDR,bandwidth = 0.02, credMass = 0.9)
+create_bins <- function(start, end, bin_size) {
+  seq(from = start, to = end, by = bin_size)
+}
+library(dplyr)
+Data_fileter_bin=Data_filter[,c("Chromosome","Start","End","RDR","BAF")]%>%dplyr::filter(BAF>0.45&RDR<1.45)%>%
+  mutate(bin_starts = purrr::map2(Start, End, ~create_bins(.x, .y, 50000))) %>%
+  tidyr::unnest(bin_starts) %>%
+  mutate(bin_ends = pmin(bin_starts + 9999, End))
+
+
+#Bandwidth_RDR=
+Out=density_with_hdi (Data_fileter_bin$RDR,bandwidth = 0.03, credMass = 0.9)
 
 # if the main peak is not located around 1, that means read depth has bias.
 Max_out=Out[[2]]%>%dplyr::filter(Y==max(Y))
 
-Bias_range=c(Max_out$Value-0.01,Max_out$Value+0.01)
+Bias_range=c(Max_out$min_value,Max_out$max_value)
 
+print(paste0("peak:",Max_out))
 ```
 
 
 ```{r,fig.width=16,fig.height=18,include=T}
+
+if (config$tumor_type == "PDX") {
+  Genomic_settings <- config$genomic_settings$PDX
+} else {
+  Genomic_settings <- config$genomic_settings$tumor
+}
+ 
+
+ Cluster_number=config$Cluster_number
 if (Max_out<0.95) {
  print ("bias")
  UMAP_data=Data_filter[,c("RDR","BAF")] 
 # Need adjust cluster number in yml based on the variety of data.
- Cluster_number=config$genomic_settings$Cluster_number
+ 
+# Determine settings based on tumor type
+
  P1=generate_umap_plots(Data_filter,UMAP_data, n_cluster = Cluster_number, seed = 123456)
  
  Normal_cluster=P1$summary_table%>%dplyr::filter(BAF>0.45&RDR<0.95&RDR>Bias_range[1])%>%mutate(Diff=abs(RDR-1))%>%arrange(Diff)%>%.$Cluster%>%.[1]
  if (! is.na(Normal_cluster)) {
    P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster)
    cowplot::plot_grid(P1$UMAP_plot_list,P2$UMAP_plot_list,ncol=1)
- }   else {
+ }  else {
+   
+   print("no normal cluster was found, please change the kmeans cluster number in your yml file ")
+   knitr::knit_exit()
+   
+ }
+   
+}  else if (Max_out>1.05) {
+ print ("bias")
+ UMAP_data=Data_filter[,c("RDR","BAF")] 
+# Need adjust cluster number in yml based on the variety of data.
+ P1=generate_umap_plots(Data_filter,UMAP_data, n_cluster = Cluster_number, seed = 123456)
+ 
+ Normal_cluster=P1$summary_table%>%dplyr::filter(BAF>0.45&RDR>1&RDR<Bias_range[2])%>%mutate(Diff=abs(RDR-1))%>%arrange(Diff)%>%.$Cluster%>%.[1]
+ if (! is.na(Normal_cluster)) {
+   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster)
+   cowplot::plot_grid(P1$UMAP_plot_list,P2$UMAP_plot_list,ncol=1)
+ }  else {
    
    print("no normal cluster was found, please change the kmeans cluster number in your yml file ")
    knitr::knit_exit()
@@ -1120,20 +1162,20 @@ names(Type_color)=factor(c("Homo_loss","Het_loss","Normal","Trisomy","Tetrasomy"
 CN_label=data.frame(Type=c("Homo_loss","Het_loss","Normal" ,"Trisomy" , "Tetrasomy"),CN=c(0,1:4))
 CNV_colors <-RColorBrewer::brewer.pal(8,"Dark2")
 names(CNV_colors)=c("Normal","LOH" , "Trisomy","High_level_ampli", "Tetrasomy", "Tetrasomy_LOH" ,"Homo_loss" ,"Het_loss" )
-normal_setting <- config$genomic_settings$normal
-LOH_setting <- config$genomic_settings$LOH
-trisomy_setting <- config$genomic_settings$trisomy
-tetrasomy_setting <- config$genomic_settings$tetrasomy
-tetrasomy_LOH_setting <- config$genomic_settings$tetrasomy_LOH
-het_loss_setting <- config$genomic_settings$het_loss
-homo_loss_setting <- config$genomic_settings$homo_loss
+normal_setting <- Genomic_settings$normal
+LOH_setting <- Genomic_settings$LOH
+trisomy_setting <- Genomic_settings$trisomy
+tetrasomy_setting <- Genomic_settings$tetrasomy
+tetrasomy_LOH_setting <- Genomic_settings$tetrasomy_LOH
+het_loss_setting <- Genomic_settings$het_loss
+homo_loss_setting <- Genomic_settings$homo_loss
 
 ```
 
 
 
 ```{r,fig.width=6,fig.height=6,include=T}
-if (Max_out<0.98 | Max_out>1.02) {
+if (Max_out<0.95 | Max_out>1.05) {
  df=P2[[2]]
 } else {
   df=Data_filter%>%mutate(Norm_RDR=RDR)
@@ -1151,6 +1193,7 @@ P5
 ```{r}
 All_Sub_p=calculate_subclone_purities(categorized_data)
 ```
+\newpage
 
 ## Clonality from LOH and Trisomy and Hetloss
 ```{r,include=T,fig.height=3,fig.width=6}
@@ -1161,7 +1204,8 @@ if (nrow(No_normal_data ) <15) {
   data=Select_data$Subclone_p%>%sort()
 # Example usage
  set.seed(12345)
- Bandwidth=config$Clonality_density$bandwith_1
+ Bandwidth=Genomic_settings$bandwidth_1
+ print(Bandwidth)
  result <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9)
 result[[2]]
 Clonaity_define=result[[2]]%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))%>%dplyr::filter(Value<0.9)
@@ -1177,7 +1221,8 @@ if (nrow(No_normal_data ) >15) {
  data=Select_data$Subclone_p%>%sort()
 # Example usage
 set.seed(12345)
-Bandwidth=config$Clonality_density$bandwith_1
+Bandwidth=Genomic_settings$bandwidth_1
+
 result <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9)
 #result[[2]]
 Data=All_Sub_p %>%dplyr::filter(!CNV %in%c("LOH","Hetloss","Trisomy")) %>%dplyr::filter(!is.na(Subclone_p))%>%dplyr::filter(Subclone_p<0.9)
@@ -1187,7 +1232,8 @@ Other=grouped_other_df%>%dplyr::filter(Group=="other")
 data=Other$Subclone_p%>%na.omit()
 Group_number=grouped_other_df$Group%>%sort()%>%as.integer()%>%na.omit()%>%max()+1
 
-Bandwidth=config$Clonality_density$bandwith_2
+Bandwidth=Genomic_settings$bandwidth_2
+print(Bandwidth)
 result_other <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9,initial_group_number= Group_number)
 #result_other[[2]]
 if (!grepl("PDX",Sample_name)){
@@ -1265,7 +1311,7 @@ High_ampli_data_baf_0.5=High_ampli_data%>%dplyr::filter(BAF>0.45)
 if(nrow(High_ampli_data_baf_0.5) >0){
  Test=sapply(High_ampli_data_baf_0.5$Norm_RDR,function(x) out=unlist(High_ampli_cal_CN(x,Clonaity_define$Value,CN_range=c(6,8,10))))%>%t()%>%as.data.frame()%>%left_join(.,Clonaity_define)
 
- High_ampli_data2=High_ampli_data_baf_0.5%>%mutate(CN=Test$CN,Group2=Test$Group,Value=Test$Value)
+ High_ampli_data2=High_ampli_data_baf_0.5%>%mutate(CN=Test$CN,Group2=Test$Group,Value=Test$Value,Group=Test$Group)
 
  High_ampli_data_baf_other=High_ampli_data%>%dplyr::filter(BAF<=0.45)%>%mutate(CN=">4",Group2="High_level_ampli")
 
@@ -1340,26 +1386,29 @@ Somatic_CN_plot_2(Data_update_10_filter,Germline_SV =Germline_CNV_ALT_unique,MAX
 
 ```
 
+\newpage
+
 ## High level amplication 
-```{r,include=F}
+```{r,include=T}
 High_ami=Data_update_10%>%dplyr::filter(CNV=="High_level_ampli")%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%arrange(Chromosome,Start)
 knitr::kable(High_ami,caption = "High amplication",longtable = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra:: column_spec(2, width = "3cm")
 ```
 
+\newpage
 ```{r,include=T}
 NF1=Data_update_10%>%dplyr::filter(grepl(",NF1,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
-knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "3cm")
+knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
 
 ```
 ```{r,include=T}
 CDKN2A=Data_update_10%>%dplyr::filter(grepl(",CDKN2A,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
-knitr::kable(CDKN2A,caption = "CDKN2A somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "3cm")
+knitr::kable(CDKN2A,caption = "CDKN2A somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
 
 ```
 
 ## Het and homoloss
  
-```{r,include=T}
+```{r,include=F}
 Loss=Data_update_10%>%dplyr::filter(grepl("loss", CNV) )%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%arrange(Chromosome,Start)
 knitr::kable(Loss,caption = "Loss",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "3cm")
 
