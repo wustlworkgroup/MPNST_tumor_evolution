@@ -1080,22 +1080,37 @@ Data_filter=Somatic_CNV[[Sample_name]]%>%Gene_annotation_for_CNV_2(.)
 create_bins <- function(start, end, bin_size) {
   seq(from = start, to = end, by = bin_size)
 }
-library(dplyr)
-Data_fileter_bin=Data_filter[,c("Chromosome","Start","End","RDR","BAF")]%>%dplyr::filter(BAF>0.45&RDR<1.45)%>%
+
+
+
+Data_fileter_bin=Data_filter[,c("Chromosome","Start","End","RDR","BAF")]%>%
   mutate(bin_starts = purrr::map2(Start, End, ~create_bins(.x, .y, 50000))) %>%
   tidyr::unnest(bin_starts) %>%
   mutate(bin_ends = pmin(bin_starts + 9999, End))
 
+Out_all=density_with_hdi (Data_fileter_bin$RDR,bandwidth = 0.03, credMass = 0.9)
+Max_out_all=Out_all[[2]]%>%dplyr::filter(Y==max(Y))
 
-#Bandwidth_RDR=
-Out=density_with_hdi (Data_fileter_bin$RDR,bandwidth = 0.03, credMass = 0.9)
+if (Max_out_all>0.95 & Max_out_all<1.05) {
+  Max_out=Max_out_all
+  Bias_range=c(Max_out$min_value,Max_out$max_value)
+} else {
+  
+  Data_fileter_bin_filter=Data_fileter_bin%>%dplyr::filter(RDR>0.7&RDR<1.35)
+  #Bandwidth_RDR=
+ Out=density_with_hdi (Data_fileter_bin_filter$RDR,bandwidth = 0.03, credMass = 0.9)
 
-# if the main peak is not located around 1, that means read depth has bias.
-Max_out=Out[[2]]%>%dplyr::filter(Y==max(Y))
+ # if the main peak is not located around 1, that means read depth has bias.
+ Max_out=Out[[2]]%>%dplyr::filter(Y==max(Y))
 
-Bias_range=c(Max_out$min_value,Max_out$max_value)
+ Bias_range=c(Max_out$min_value,Max_out$max_value)
+}
 
-print(paste0("peak:",Max_out))
+
+
+
+
+print(paste0("peak:",Max_out$Value))
 ```
 
 
@@ -1215,7 +1230,7 @@ Clonaity_define=result[[2]]%>%arrange(desc(Value))%>%mutate(Group=as.character(c
 
 
 ```{r,include=T,fig.height=3,fig.width=12}
-if (nrow(No_normal_data ) >15) {
+if (nrow(No_normal_data) >15) {
 
  Select_data <-All_Sub_p %>%dplyr::filter(CNV %in%c("LOH","Hetloss","Trisomy"))
  data=Select_data$Subclone_p%>%sort()
@@ -1229,18 +1244,26 @@ Data=All_Sub_p %>%dplyr::filter(!CNV %in%c("LOH","Hetloss","Trisomy")) %>%dplyr:
 out=group_numbers_with_clonality(Data$Subclone_p,result[[2]], threshold=0.1) 
 grouped_other_df= Data%>%as.data.frame()%>%mutate(Group=out)
 Other=grouped_other_df%>%dplyr::filter(Group=="other")
-data=Other$Subclone_p%>%na.omit()
-Group_number=grouped_other_df$Group%>%sort()%>%as.integer()%>%na.omit()%>%max()+1
-
-Bandwidth=Genomic_settings$bandwidth_2
-print(Bandwidth)
-result_other <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9,initial_group_number= Group_number)
-#result_other[[2]]
-if (!grepl("PDX",Sample_name)){
-  Clonaity_define=rbind(result[[2]],result_other[[2]])%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))%>%dplyr::filter(Value<0.9)
-} else {
-   Clonaity_define=rbind(result[[2]],result_other[[2]])%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))
+if(nrow(Other)>0) {
   
+  data=Other$Subclone_p%>%na.omit()
+  Group_number=grouped_other_df$Group%>%sort()%>%as.integer()%>%na.omit()%>%max()+1
+
+  Bandwidth=Genomic_settings$bandwidth_2
+  print(Bandwidth)
+  result_other <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9,initial_group_number= Group_number)
+ 
+ #result_other[[2]]
+  if (!grepl("PDX",Sample_name)){
+     Clonaity_define=rbind(result[[2]],result_other[[2]])%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))%>%dplyr::filter(Value<0.9)
+  } else {
+    Clonaity_define=rbind(result[[2]],result_other[[2]])%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))
+  
+  } 
+}
+ else {
+   Clonaity_define=result[[2]]%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))
+   
  }
 
 }
