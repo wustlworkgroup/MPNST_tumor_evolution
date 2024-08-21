@@ -1,14 +1,14 @@
 default:
   document:
     author: "Yang Lyu"
-  PT_ID: "JH-2-002"
-  Sample_number: 6
+  PT_ID: "JH-2-009"
+  Sample_number: 4
   tumor_type: "Tumor" # or "Tumor"
   Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
   Email: "lyu.yang@wustl.edu"
   Reference_path: "/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
   base_output_dir: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Report"
-  Cluster_number: 15
+  Cluster_number: 9
   
   genomic_settings:
     tumor:
@@ -28,7 +28,7 @@ default:
         Norm_RDR: [1.37, 1.9]
         BAF: [0, 0.4]
       het_loss:
-        Norm_RDR: [0, 1]
+        Norm_RDR: [0, 0.85]
         BAF: [0.1, 0.4]
       homo_loss:
         Norm_RDR: [0, 0.85]
@@ -53,7 +53,7 @@ default:
         Norm_RDR: [1.5, 2.05]
         BAF: [0, 0.4]
       het_loss:
-        Norm_RDR: [0, 1]
+        Norm_RDR: [0, 0.85]
         BAF: [0.1, 0.4]
       homo_loss:
         Norm_RDR: [0, 0.85]
