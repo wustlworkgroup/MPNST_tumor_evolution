@@ -308,10 +308,8 @@ knitr::kable(Samples,caption = "Samples for anlaysis")%>%kableExtra::kable_styli
 ```{r}
 
 if (! file.exists(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))) {
-
- 
- 
-  save(PT_Sample_info,Germline_CNV,Somatic_CNV,file=file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+  dir.create(file.path(Process_path,PT_ID))
+   save(PT_Sample_info,Germline_CNV,Somatic_CNV,file=file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
 }
 ```
 

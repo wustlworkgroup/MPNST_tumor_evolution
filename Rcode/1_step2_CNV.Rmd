@@ -543,7 +543,7 @@ calculate_tumor_purity <- function(RDR, BAF) {
 
 
 
-Somatic_CN_plot_2 <- function(Somatic_SV, Germline_SV = NULL,MAX_CN=4) {
+Somatic_CN_plot_2 <- function(Somatic_SV, Germline_SV = NULL,MAX_CN=4,Title) {
 
   # Create a color palette for different clonals
   unique_clonal <- as.integer(unique(Somatic_SV$Value)*100)
@@ -584,9 +584,9 @@ Somatic_CN_plot_2 <- function(Somatic_SV, Germline_SV = NULL,MAX_CN=4) {
       kpPlotRegions(kp, Somatic_SV_torange, col= NA, border = Somatic_SV_select$line_color,r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN, density = 20, angle = 45)
        
    
-    } else if (grepl("CDKN2A" ,Somatic_SV_select$Gene_list)&grepl("loss",Somatic_SV_select$CNV) ) {
+    } else if (grepl(",CDKN2A," ,Somatic_SV_select$Gene_list)&grepl("loss",Somatic_SV_select$CNV) ) {
       kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN)
-       kpText(kp, data.panel = 1,col="red" ,chr =Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$CN/ MAX_CN+0.1, labels = paste0("CDKN2A_",Somatic_SV_select$CNV), pos = 2)
+      kpText(kp, data.panel = 1,col="red" ,chr =Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$CN/ MAX_CN+0.1, labels = paste0("CDKN2A_",Somatic_SV_select$CNV), pos = 2)
     } 
        else if (grepl("NF1" ,Somatic_SV_select$Gene_list)&grepl("loss",Somatic_SV_select$CNV)&is.null(Germline_SV) ) {
         kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN)
@@ -615,7 +615,7 @@ Somatic_CN_plot_2 <- function(Somatic_SV, Germline_SV = NULL,MAX_CN=4) {
   Group=Somatic_SV[,c("Value","Group2")]%>%dplyr::filter(!grepl("Normal|other",Group2))%>%arrange(desc(Value))%>%unique()%>%mutate(Value=as.integer(Value*100))
    
   
-  title(main = "Somatic CNV Plot", cex.main = 1.5, line = 2)
+  title(main = Title, cex.main = 1.5, line = 2)
   # Add y-axis label using base R graphics
   mtext("Copy number", side = 2, line = 2.5, cex = 1.2) # Adjust `line` and `cex` as needed
   
@@ -965,7 +965,7 @@ density_with_hdi <- function(data, bandwidth = 0.03, credMass = 0.9, initial_gro
   
   # Create a dataframe for filtered peak values with group numbers, min_value, and max_value
   peak_df <- data.frame(
-    Value = filtered_peak_values,
+    Value = round(filtered_peak_values,2),
     Group = seq(initial_group_number, length.out = length(filtered_peak_values)),
     min_value = min_values,
     max_value = max_values
@@ -1047,13 +1047,27 @@ if (nrow(Germline_CNV_ALT)>0) {
 
 ```
 
-
-
-```{r,include=F}
-Data_filter=Somatic_CNV[[Sample_name]]%>%Gene_annotation_for_CNV_2(.)
+```{r}
+Somatic_seg=Somatic_CNV[[Sample_name]]%>%Gene_annotation_for_CNV_2(.)
 ```
 
 ## Step1:  Define normal CN AND calcuate RDR bias 
+
+```{r,include=T}
+if (max(Somatic_seg$RDR)>3) {
+  
+  Data_filter=Somatic_seg%>%dplyr::filter(RDR<3)
+  Outlier=Somatic_seg%>%dplyr::filter(RDR>=3)%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%mutate(Length=End-Start)
+  knitr::kable(Outlier,caption = "Seg with RDR >2.5")%>%kableExtra::kable_styling(latex_options = c("scale_down")  )%>%kableExtra:: column_spec(9, width = "3cm")
+
+} else{
+  
+  Data_filter=Somatic_seg
+}
+
+```
+
+
 
 ```{r,include=F,eval=F}
 
@@ -1090,8 +1104,7 @@ Data_fileter_bin=Data_filter[,c("Chromosome","Start","End","RDR","BAF")]%>%
 
 Out_all=density_with_hdi (Data_fileter_bin$RDR,bandwidth = 0.03, credMass = 0.9)
 Max_out_all=Out_all[[2]]%>%dplyr::filter(Y==max(Y))
-
-if (Max_out_all>0.95 & Max_out_all<1.05) {
+if (Max_out_all$Value>0.95 & Max_out_all$Value<1.05) {
   Max_out=Max_out_all
   Bias_range=c(Max_out$min_value,Max_out$max_value)
 } else {
@@ -1124,7 +1137,7 @@ if (config$tumor_type == "PDX") {
  
 
  Cluster_number=config$Cluster_number
-if (Max_out<0.95) {
+if (Max_out$Value<0.95) {
  print ("bias")
  UMAP_data=Data_filter[,c("RDR","BAF")] 
 # Need adjust cluster number in yml based on the variety of data.
@@ -1144,7 +1157,7 @@ if (Max_out<0.95) {
    
  }
    
-}  else if (Max_out>1.05) {
+}  else if (Max_out$Value>1.05) {
  print ("bias")
  UMAP_data=Data_filter[,c("RDR","BAF")] 
 # Need adjust cluster number in yml based on the variety of data.
@@ -1190,7 +1203,7 @@ homo_loss_setting <- Genomic_settings$homo_loss
 
 
 ```{r,fig.width=6,fig.height=6,include=T}
-if (Max_out<0.95 | Max_out>1.05) {
+if (Max_out$Value<0.95 | Max_out$Value>1.05) {
  df=P2[[2]]
 } else {
   df=Data_filter%>%mutate(Norm_RDR=RDR)
@@ -1401,12 +1414,14 @@ Somatic_seg_Norm_RDR_plot_2(Data_update_10)
 
 Germline_CNV_ALT_unique=Germline_CNV_ALT%>%distinct(name,.keep_all = T)
 
-Data_update_10_filter=Data_update_10%>%dplyr::filter(!grepl(">4",as.character(CN)))%>%mutate(CN=as.numeric(CN))
+Data_update_10_refine=Data_update_10%>%dplyr::filter(!grepl(">4",as.character(CN)))%>%mutate(CN=as.numeric(CN))%>%dplyr::filter(CN<6.1)%>%mutate(CN=ifelse(Value<0.15&!is.na(Value),2,CN))%>%
+  mutate(Group2=ifelse(Value<0.15,"Normal",Group2))%>%
+  mutate(Value=ifelse(Value<0.15&!is.na(Value),1,Value))
 
-MAX_cn=max(Data_update_10_filter$CN)
-Somatic_CN_plot_2(Data_update_10_filter,Germline_SV =Germline_CNV_ALT_unique,MAX_CN =MAX_cn)
+MAX_cn=max(Data_update_10_refine$CN)
+ 
 
-
+Somatic_CN_plot_2(Data_update_10_refine,Germline_SV =Germline_CNV_ALT_unique,MAX_CN =MAX_cn,Title=paste0("Somatic CNV plot"," Clone_proportion>0.15" ))
 ```
 
 \newpage
@@ -1420,12 +1435,16 @@ knitr::kable(High_ami,caption = "High amplication",longtable = TRUE) %>%kableExt
 \newpage
 ```{r,include=T}
 NF1=Data_update_10%>%dplyr::filter(grepl(",NF1,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
-knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
+if (NF1$CN!=2) {
+knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")}
 
 ```
 ```{r,include=T}
 CDKN2A=Data_update_10%>%dplyr::filter(grepl(",CDKN2A,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+
+if (CDKN2A$CN!=2) {
 knitr::kable(CDKN2A,caption = "CDKN2A somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
+}
 
 ```
 
@@ -1440,7 +1459,7 @@ knitr::kable(Loss,caption = "Loss",booktabs = TRUE) %>%kableExtra::kable_styling
 
 ```{r}
 dir.create(file.path(Process_path,PT_ID))
-save(Data_update_10,file=file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
+save(Data_update_10,Data_update_10_refine,file=file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
 ```
 
 
