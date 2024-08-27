@@ -1,14 +1,14 @@
 default:
   document:
     author: "Yang Lyu"
-  PT_ID: "JH-2-009"
-  Sample_number: 4
-  tumor_type: "Tumor" # or "Tumor"
+  PT_ID: "JH-2-023"
+  Sample_number: 1
+  tumor_type: "Tumor" # " PDX" or  "Tumor"
   Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
   Email: "lyu.yang@wustl.edu"
   Reference_path: "/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
   base_output_dir: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Report"
-  Cluster_number: 9
+  Cluster_number: 15
   
   genomic_settings:
     tumor:
