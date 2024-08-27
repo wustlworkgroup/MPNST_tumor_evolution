@@ -56,8 +56,21 @@ Rawdata_path=file.path(Path,"Rawdata",PT_ID)
 Process_path=file.path(Path,"Processed")
 Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
 Reference_path="/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
-Password =rstudioapi::askForPassword("Enter your synaspe password:")
-synapser::synLogin(email=Email,password =Password)
+
+# Check the version of the synapser package
+synapser_version <- packageVersion("synapser")
+
+# Prompt user for input based on synapser version
+if (synapser_version < "2.0.0") {
+  Password <- rstudioapi::askForPassword("Enter your Synapse password:")
+  synapser::synLogin(email = Email, password = Password)
+} else {
+  AuthToken <- rstudioapi::askForPassword("Enter your Synapse token:")
+  synapser::synLogin(email = Email, authToken = AuthToken)
+}
+
+#Password =rstudioapi::askForPassword("Enter your synaspe password:")
+#synapser::synLogin(email=Email,password =Password)
 ```
 ```{r,include=F}
 dir(Public_database_path)
@@ -306,10 +319,10 @@ knitr::kable(Samples,caption = "Samples for anlaysis")%>%kableExtra::kable_styli
 
 
 ```{r}
-
 if (! file.exists(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))) {
   dir.create(file.path(Process_path,PT_ID))
    save(PT_Sample_info,Germline_CNV,Somatic_CNV,file=file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+
 }
 ```
 
