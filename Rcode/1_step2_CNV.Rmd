@@ -14,7 +14,7 @@ knit: (
   function(inputFile, encoding) {
     config=config::get(file = 'Step2_config.yml') 
     
-    pSubTitle <- paste0(config$PT_ID,"_",config$Sample_number,"_CNV.pdf")
+    pSubTitle <- paste0(config$PT_ID,"_",config$Sample_input,"_CNV.pdf")
     
     DIR=file.path(config$base_output_dir, config$PT_ID)
     
@@ -37,7 +37,6 @@ knitr::opts_chunk$set(echo = F,warnings =F, message=F,include=F)
 options(knitr.table.format = 'markdown',encoding = 'UTF-8',warnings =F, message=F ) 
 # Check and create output directory if it doesn't exist
 config <- config::get(file = 'Step2_config.yml')
-
 output_dir <- file.path(config$base_output_dir, config$PT_ID)
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
@@ -57,7 +56,7 @@ PT_ID <- config$PT_ID
 Path <- config$Path
 Email <- config$Email
 Reference_path <- config$Reference_path
-Sample_number=config$Sample_number
+Sample_input=config$Sample_input
 Rcode_path=file.path(Path,"Rcode",PT_ID)
 Rdata_path=file.path(Path,"Rdata",PT_ID )
 Rawdata_path=file.path(Path,"Rawdata",PT_ID)
@@ -88,7 +87,7 @@ load(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")
 ```{r}
 Tumor_samples=PT_Sample_info%>%dplyr::filter(tumorType!="Normal")
 RDR_BAF_samples=names(Somatic_CNV)
-Sample_name=RDR_BAF_samples[Sample_number]
+Sample_name=RDR_BAF_samples[Sample_input]
 ```
 
 ```{r,include=T}
@@ -1001,12 +1000,12 @@ categorize_CNV <- function(data) {
     mutate(CNV = ifelse(
       (Norm_RDR >= normal_setting$Norm_RDR[1] & Norm_RDR <= normal_setting$Norm_RDR[2]) & (BAF >= normal_setting$BAF[1] & BAF <= normal_setting$BAF[2]), "Normal",
       ifelse((Norm_RDR >= LOH_setting$Norm_RDR[1] & Norm_RDR <= LOH_setting$Norm_RDR[2]) & (BAF >= LOH_setting$BAF[1] & BAF <= LOH_setting$BAF[2]), "LOH",
-      ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF >= trisomy_setting$BAF[1] & BAF <= trisomy_setting$BAF[2], "Trisomy",
+      #ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF >= trisomy_setting$BAF[1] & BAF <= trisomy_setting$BAF[2], "Trisomy",
       ifelse(Norm_RDR >= tetrasomy_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_setting$Norm_RDR[2] & BAF >= tetrasomy_setting$BAF[1] & BAF <= tetrasomy_setting$BAF[2], "Tetrasomy",
       ifelse(Norm_RDR >= tetrasomy_LOH_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_LOH_setting$Norm_RDR[2] & BAF >= tetrasomy_LOH_setting$BAF[1] & BAF <= tetrasomy_LOH_setting$BAF[2], "Tetrasomy_LOH",
       ifelse(Norm_RDR >= het_loss_setting$Norm_RDR[1] & Norm_RDR <= het_loss_setting$Norm_RDR[2] & BAF >= het_loss_setting$BAF[1] & BAF <= het_loss_setting$BAF[2], "Het_loss",
       ifelse(Norm_RDR >= homo_loss_setting$Norm_RDR[1] & Norm_RDR <= homo_loss_setting$Norm_RDR[2] & (BAF >= homo_loss_setting$BAF[2] | BAF <= homo_loss_setting$BAF[1]), "Homo_loss",
-      "Unclassified"))))))))
+      "Unclassified")))))))
   
   return(data)
 }
@@ -1129,7 +1128,7 @@ print(paste0("peak:",Max_out$Value))
 
 ```{r,fig.width=16,fig.height=18,include=T}
 
-if (config$tumor_type == "PDX") {
+if (config$tumor_type == "PDX"|grepl("PDX",Sample_name)) {
   Genomic_settings <- config$genomic_settings$PDX
 } else {
   Genomic_settings <- config$genomic_settings$tumor
@@ -1188,8 +1187,10 @@ if (Max_out$Value<0.95) {
 Type_color=RColorBrewer::brewer.pal(9,"Set1")[1:6]
 names(Type_color)=factor(c("Homo_loss","Het_loss","Normal","Trisomy","Tetrasomy","Other"),levels= c("Homo_loss","Het_loss","Normal","Trisomy","Tetrasomy","Other"))
 CN_label=data.frame(Type=c("Homo_loss","Het_loss","Normal" ,"Trisomy" , "Tetrasomy"),CN=c(0,1:4))
-CNV_colors <-RColorBrewer::brewer.pal(8,"Dark2")
-names(CNV_colors)=c("Normal","LOH" , "Trisomy","High_level_ampli", "Tetrasomy", "Tetrasomy_LOH" ,"Homo_loss" ,"Het_loss" )
+CNV_colors <-RColorBrewer::brewer.pal(9,"Paired")
+names(CNV_colors)=c("Normal","LOH" , "Trisomy","Trisomy_Tetrasomy_mix" ,"High_level_ampli", "Tetrasomy", "Tetrasomy_LOH" ,"Homo_loss" ,"Het_loss" )
+
+
 normal_setting <- Genomic_settings$normal
 LOH_setting <- Genomic_settings$LOH
 trisomy_setting <- Genomic_settings$trisomy
@@ -1198,23 +1199,117 @@ tetrasomy_LOH_setting <- Genomic_settings$tetrasomy_LOH
 het_loss_setting <- Genomic_settings$het_loss
 homo_loss_setting <- Genomic_settings$homo_loss
 
+
+```
+
+```{r}
+tumor_purity <- seq(0.2, 1, by = 0.1)
+
+# Calculate RDR for trisomy
+RDR_trisomy <- 1 + tumor_purity / 2
+
+# Calculate BAF for trisomy assuming AAB scenario
+BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
+
+# Create a data frame to store these values
+Trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
+trisomy_model <- lm(BAF ~ RDR, data = Trisomy_data)
+Trisomy_model_predict <- function(model, RDR, BAF, threshold=0.5) {
+  
+    # Validate model input
+    if (missing(model) || !inherits(model, "lm")) {
+        stop("Please provide a valid linear model.")
+    }
+    
+    # Create a new data frame for the specific point
+    specific_point <- data.frame(RDR = RDR)
+    
+    # Predict the BAF for this specific RDR using the model
+    predicted_BAF <- predict(model, newdata = specific_point)
+    
+    # Calculate the residual (difference between actual and predicted BAF)
+    residual <- BAF - predicted_BAF
+    
+    # Determine if the point is close to the line based on the threshold
+    is_close <- abs(residual) <= threshold
+    
+    # Output the result along with some informative data
+    list(
+        Predicted_BAF = predicted_BAF,
+        Actual_BAF = BAF,
+        Residual = residual,
+        Is_Close_To_Line = is_close,
+        Message = if (is_close) "The point is close to the regression line." else "The point is not close to the regression line."
+    )
+}
 ```
 
 
-
-```{r,fig.width=6,fig.height=6,include=T}
+```{r,include=T,fig.width=10,fig.height=6}
 if (Max_out$Value<0.95 | Max_out$Value>1.05) {
  df=P2[[2]]
 } else {
   df=Data_filter%>%mutate(Norm_RDR=RDR)
   
 }
-categorized_data <- categorize_CNV(df)
 
+
+#Trisomy purity (0.3-0.9, RDR 1.1~1.45, BAF 0.35 0.47)
+trisomy_data <- data.frame(
+  Tumor_Purity = seq(0.4, 0.9, by = 0.1),
+  RDR = 1 + seq(0.4, 0.9, by = 0.1) / 2,
+  BAF = 0.33 * seq(0.4, 0.9, by = 0.1) + 0.5 * (1 - seq(0.4, 0.9, by = 0.1))
+)
+
+Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.45&BAF>0.3&BAF<0.47)
+
+if (grepl("PDX",Sample_name)){
+  trisomy_data <- data.frame(
+  Tumor_Purity = seq(0.4, 1, by = 0.1),
+  RDR = 1 + seq(0.4, 1, by = 0.1) / 2,
+  BAF = 0.33 * seq(0.4, 1, by = 0.1) + 0.5 * (1 - seq(0.4,1, by = 0.1))
+)
+
+ Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.5&BAF>0.3&BAF<0.47)
+  
+}
+
+
+
+results <- Data_select%>%.[,c("Chromosome","Start", "End","BAF","Norm_RDR")]%>%dplyr::rename(RDR=Norm_RDR) %>%
+  rowwise() %>%
+  mutate(
+    Analysis = list(Trisomy_model_predict(trisomy_model , RDR, BAF, threshold = 0.02))
+  )%>%ungroup() %>%  # Optionally remove old columns if you only want the results
+  tidyr::unnest_wider(col = Analysis)%>%arrange(RDR)
+
+Data_select_2=Data_select%>%left_join(.,results[,c(1,2,3,9)])%>%mutate(CNV=ifelse(Is_Close_To_Line==T,"Trisomy","Other"))
+G1=ggplot(Data_select_2,aes(x=BAF,y=Norm_RDR,color=factor(Is_Close_To_Line)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+
+
+coef_intercept <- coef(trisomy_model)[1]
+coef_slope <- coef(trisomy_model)[2]
+
+# Adding line calculation to results
+Data_select_3 <- Data_select_2 %>%
+  mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
+  mutate(CNV2=ifelse(BAF < Line_BAF,"Trisomy",CNV) )%>%dplyr::select(-Line_BAF) # Select points where BAF is less than the calculated
+
+
+G2=ggplot(Data_select_3 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+cowplot::plot_grid(G1,G2)
+```
+
+
+
+```{r,fig.width=6,fig.height=6,include=T}
+
+categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_3[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV = ifelse(is.na(CNV2), CNV, ifelse(CNV2 == "Trisomy", "Trisomy", CNV)))
 out=categorized_data%>%dplyr::filter(CNV=="Unclassified")
 
-P5 =ggplot(categorized_data, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3) +ggtitle("Cluster_CNV2")
+P5 =ggplot(categorized_data, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3)+ggtitle("Cluster_CNV2")
 P5
+
 ```
 
 
