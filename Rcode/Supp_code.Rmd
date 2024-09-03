@@ -1,0 +1,706 @@
+---
+title: "test"
+output: html_document
+date: "2024-08-28"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r,include=T}
+library(ggplot2)
+library(dplyr)
+# Generate a sequence for tumor purity from 0 to 1 with increments of 0.01
+tumor_purity <- seq(0.4, 0.9, by = 0.1)
+
+# Calculate RDR for trisomy
+RDR_trisomy <- 1 + tumor_purity / 2
+
+# Calculate BAF for trisomy assuming AAB scenario
+BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
+
+# Create a data frame to store these values
+trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
+
+# Plotting
+# ggplot(trisomy_data, aes(x = Tumor_Purity)) +
+#   geom_line(aes(y = RDR, colour = "RDR"), size = 1) + 
+#   geom_line(aes(y = BAF, colour = "BAF"), size = 1) +
+#   labs(x = "Tumor Purity (TP)", y = "Value") +
+#   scale_colour_manual(values = c("RDR" = "red", "BAF" = "blue"),
+#                       name = "Measure",
+#                       breaks = c("RDR", "BAF"),
+#                       labels = c("Relative DNA Ratio (RDR)", "Biallelic Frequency (BAF)")) +
+#   theme_minimal() +
+#   ggtitle("RDR and BAF vs. Tumor Purity for Trisomy") +
+#   theme(
+#     plot.title = element_text(hjust = 0.5),
+#     legend.position = "bottom"
+#   )
+ggplot(trisomy_data, aes(x = BAF, y = RDR, color = Tumor_Purity)) +
+  geom_point(aes(size = Tumor_Purity), stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+  scale_color_gradient(low = "blue", high = "red") +  # Setup color gradient for Tumor Purity
+  scale_size_continuous(guide = "none") +  # Optionally remove size legend if it clutters the plot
+  geom_text(aes(label = sprintf("%.1f", Tumor_Purity)), vjust = -1, hjust = 1.2) +  # Label points
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 2) +  # Set y-axis limits
+  labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)", 
+       title = "Relationship between RDR and BAF across Tumor Purities") +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"
+  )
+
+
+Trisomy_model <- lm(BAF ~ RDR, data = trisomy_data)
+
+# Display the summary of the model to see the coefficients
+summary(Trisomy_model)
+
+# Extract the coefficients
+coefficients <- coef(Trisomy_model)
+a <- coefficients[2]  # Slope
+b <- coefficients[1]  # Intercept
+
+# Print the linear equation
+cat(sprintf("The linear equation is: BAF = %.2f * RDR + %.2f", a, b), "\n")
+
+ggplot(trisomy_data, aes(x = BAF, y = RDR, color = factor(Tumor_Purity)))+geom_point(data=trisomy_data)+geom_smooth(data=trisomy_data,method = "lm", se = FALSE) + # Label points
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 2) 
+#+geom_point(aes(size = Tumor_Purity), stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+#  scale_color_gradient(low = "blue", high = "red") 
+      
+```
+# Trisomy +LOH
+```{r,fig.width=6,fig.height=10}
+LOH_per <- seq(0, 1, by = 0.1)
+LOH_type <- c("Gain", "Loss")
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for trisomy
+Trisomy_LOH_data$RDR <- 1 + Trisomy_LOH_data$Tumor_Purity / 2
+
+# Calculate BAF based on LOH type
+Trisomy_LOH_data2 <- Trisomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Gain" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0.67 * LOH_purity,
+    LOH_type == "Loss" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0 * LOH_purity,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%mutate(BAF=ifelse(BAF>0.5,1-BAF,BAF))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+Trisomy_LOH_data2_loss=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Loss" )
+Trisomy_LOH_data2_gain=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Gain" )
+triangle_data <- data.frame(
+  BAF = c(0.4, 0.5, 0.5),
+  RDR = c(1, 1.5, 1)
+)
+P1=ggplot(Trisomy_LOH_data2_loss, aes(x = BAF, y = RDR,size=factor(LOH_per), color = factor(Tumor_Purity)))+geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1,size=0.3)+
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 2) 
+
+
+P2=ggplot(Trisomy_LOH_data2_gain, aes(x = BAF, y = RDR, size=factor(LOH_per),color = factor(Tumor_Purity)))+geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1,size=0.3)+
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 2) 
+
+
+
+```
+
+# Tetrasomy+ LOH
+
+```{r}
+tumor_purity <- seq(0.4, 0.9, by = 0.1)
+LOH_per <- seq(0, 1, by = 0.1)
+LOH_type <- c("Loss")
+Tetrasomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR =1+tumor_purity , BAF = 0.5)
+
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Tetrasomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for Tetrasomy
+Tetrasomy_LOH_data$RDR <- 1+Tetrasomy_LOH_data$Tumor_Purity
+
+# Calculate BAF based on LOH type
+Tetrasomy_LOH_data2 <- Tetrasomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Loss" ~ 0.5 * (1 - LOH_purity) + 0.25 * LOH_purity ,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+#P2=plot_regression_with_data(Tetrasomy_LOH_data2, model_data=Tetrasomy_data,Ylim=c(1.1,2),Xlim=c(0,0.51),Title="Tetrasomy_LOH") +geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.5, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.3)
+P3=ggplot(Tetrasomy_LOH_data2, aes(x = BAF, y = RDR, color = factor(Tumor_Purity)))+geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1)+
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 2) 
+```
+
+```{r,fig.width=8,fig.height=6}
+cowplot::plot_grid(P1,P2,P3,nrow=1,labels=c("Trisomy_LOH_loss","Trisomy_LOH_Gain","Tetrasomy_LOH_loss"))
+```
+
+
+
+```{r}
+knitr::knit_exit()
+```
+
+
+# Linear regression for trisomy
+```{r}
+data <- data.frame(
+    Tumor_Purity = seq(0.3, 1, by = 0.1),
+    RDR = 1 + seq(0.3, 1, by = 0.1) / 2,
+    BAF = 0.33 * seq(0.3, 1, by = 0.1) + 0.5 * (1 - seq(0.3, 1, by = 0.1))
+)
+
+# Perform linear regression to find the relationship between RDR and BAF
+model <- lm(BAF ~ RDR, data = data)
+
+# Display the summary of the model to see the coefficients
+summary(model)
+
+# Extract the coefficients
+coefficients <- coef(model)
+a <- coefficients[2]  # Slope
+b <- coefficients[1]  # Intercept
+
+# Print the linear equation
+cat(sprintf("The linear equation is: BAF = %.2f * RDR + %.2f", a, b), "\n")
+```
+
+# Trisomy model
+```{r}
+tumor_purity <- seq(0.2, 1, by = 0.1)
+
+# Calculate RDR for trisomy
+RDR_trisomy <- 1 + tumor_purity / 2
+
+# Calculate BAF for trisomy assuming AAB scenario
+BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
+
+# Create a data frame to store these values
+Trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
+trisomy_model <- lm(BAF ~ RDR, data = Trisomy_data)
+
+Trisomy_model_predict <- function(model, RDR, BAF, threshold=0.5) {
+    # Validate model input
+    if (missing(model) || !inherits(model, "lm")) {
+        stop("Please provide a valid linear model.")
+    }
+    
+    # Create a new data frame for the specific point
+    specific_point <- data.frame(RDR = RDR)
+    
+    # Predict the BAF for this specific RDR using the model
+    predicted_BAF <- predict(model, newdata = specific_point)
+    
+    # Calculate the residual (difference between actual and predicted BAF)
+    residual <- BAF - predicted_BAF
+    
+    # Determine if the point is close to the line based on the threshold
+    is_close <- abs(residual) <= threshold
+    
+    # Output the result along with some informative data
+    list(
+        Predicted_BAF = predicted_BAF,
+        Actual_BAF = BAF,
+        Residual = residual,
+        Is_Close_To_Line = is_close,
+        Message = if (is_close) "The point is close to the regression line." else "The point is not close to the regression line."
+    )
+}
+
+plot_regression_with_data <- function(input_data, model_data,Ylim,Xlim,Title ) {
+  
+  if (!is.null(input_data$LOH_per)){
+    input_data$Tumor_Purity <- as.factor(input_data$Tumor_Purity)
+    plot <- ggplot(input_data, aes(x = BAF, y = RDR)) +
+        geom_point(aes(color=LOH_per,shape=Tumor_Purity),size = 4) +  # Plots the data points
+        geom_line(data =  model_data, aes(x = BAF, y = RDR), color = "blue") +  # Uses predicted values for the regression line
+        ylim(Ylim) + xlim(Xlim)# Set Y-axis limits
+        labs(title = Title,
+             x = "Biallelic Frequency (BAF)",
+             y = "Relative DNA Ratio (RDR)") +
+        theme_minimal()
+    
+    # Return the plot
+    return(plot)
+    
+  } else {
+    # Generate the plot
+    plot <- ggplot(input_data, aes(x = BAF, y = RDR)) +
+        geom_point(aes(color = Is_Close_To_Line), size = 4) +  # Plots the data points
+        geom_line(data =  model_data, aes(x = BAF, y = RDR), color = "blue") +  # Uses predicted values for the regression line
+        ylim(Ylim) + xlim(Xlim)+ # Set Y-axis limits
+        labs(title = Title,
+             x = "Biallelic Frequency (BAF)",
+             y = "Relative DNA Ratio (RDR)") +
+        theme_minimal()
+    
+    # Return the plot
+    return(plot)
+  }
+}
+```
+
+
+# Trisomy + LOH model
+```{r}
+tumor_purity <- seq(0.4, 0.9, by = 0.1)
+LOH_per <- seq(0.1, 1, by = 0.1)
+LOH_type <- c("Gain", "Loss")
+
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for trisomy
+Trisomy_LOH_data$RDR <- 1 + Trisomy_LOH_data$Tumor_Purity / 2
+
+# Calculate BAF based on LOH type
+Trisomy_LOH_data2 <- Trisomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Gain" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0.67 * LOH_purity,
+    LOH_type == "Loss" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0 * LOH_purity,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+
+library(dplyr)
+
+# Function to compute RDR and BAF for trisomy considering different LOH scenarios
+Setup_Trisomy_LOH_model <- function(tumor_purity, LOH_per, LOH_type) {
+  # Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+  Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                  LOH_per = LOH_per, 
+                                  LOH_type = LOH_type) %>%
+    mutate(LOH_purity = Tumor_Purity * LOH_per)
+
+  # Calculate RDR for trisomy
+  Trisomy_LOH_data$RDR <- 1 + Trisomy_LOH_data$Tumor_Purity / 2
+
+  # Calculate BAF based on LOH type
+  Trisomy_LOH_data <- Trisomy_LOH_data %>%
+    mutate(BAF = case_when(
+      LOH_type == "Gain" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0.67 * LOH_purity,
+      LOH_type == "Loss" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity),
+      TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+    )) %>%
+    mutate(LOH_Label = paste("LOH Type:", LOH_type, "LOH %:", LOH_per, sep = " "))
+
+  # Return the data frame
+  model_list <- Trisomy_LOH_data %>%
+  group_by(LOH_per) %>%
+  do(model = lm(RDR ~ BAF, data = .))
+
+# Alternatively, store coefficients or summaries directly
+  model_summaries <- Trisomy_LOH_data%>%group_by(LOH_per) %>%
+    do({
+      model = lm(RDR ~ BAF, data = .)
+      tibble(
+        equation = sprintf("RDR = %.2f + %.2f*(BAF)", coef(model)[1], coef(model)[2]),
+        r_squared = summary(model)$r.squared
+      )
+    })
+
+}
+
+
+
+plot_trisomy_loh_models <- function(tumor_purity, LOH_per, LOH_type) {
+  # Generate data
+  Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                  LOH_per = LOH_per, 
+                                  LOH_type = LOH_type) %>%
+    mutate(LOH_purity = Tumor_Purity * LOH_per,
+           RDR = 1 + Tumor_Purity / 2,
+           BAF = case_when(
+             LOH_type == "Gain" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0.67 * LOH_purity,
+             LOH_type == "Loss" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity),
+             TRUE ~ NA_real_  # Default case
+           ))
+
+  # Fit models and extract equations
+  model_results <- Trisomy_LOH_data %>%
+    group_by(LOH_per) %>%
+    do({
+      mod <- lm(RDR ~ BAF, data = .)
+      data.frame(
+        LOH_per = unique(.$LOH_per),
+        equation = sprintf("RDR = %.2f + %.2f * BAF", coef(mod)[1], coef(mod)[2])
+      )
+    })
+
+  # Create a plot
+  plot <- ggplot() +
+    labs(title = "Model Lines for RDR vs BAF Across LOH Percentages",
+         x = "Biallelic Frequency (BAF)",
+         y = "Relative DNA Ratio (RDR)") +
+    theme_minimal()
+
+  # Add each line from the model_data
+  for (i in seq_len(nrow(model_results))) {
+    current_equation <- model_results$equation[i]
+    current_loh_per <- model_results$LOH_per[i]
+    plot <- plot + 
+      stat_function(data = model_results, 
+                    aes(color = as.factor(current_loh_per)), 
+                    fun = function(x) eval(parse(text = current_equation)))
+  }
+
+  # Add color legend
+  plot <- plot + scale_color_discrete(name = "LOH %") + 
+                 theme(legend.position = "right")
+
+  # Return the plot
+  return(plot)
+}
+
+tumor_purity <- seq(0.4, 0.9, by = 0.1)
+LOH_per <- seq(0.1, 1, by = 0.1)
+LOH_type <- c("Gain", "Loss")
+
+# Call the function
+plot <- plot_trisomy_loh_models(tumor_purity, LOH_per, LOH_type)
+
+# Print the plot
+print(plot)
+
+
+model_results=Setup_Trisomy_LOH_model(tumor_purity ,LOH_per,LOH_type)
+model_results$r_squared
+
+  plot <- ggplot(Trisomy_LOH_data, aes(x = BAF, y = RDR)) +
+    geom_point(aes(color = as.factor(LOH_per)), alpha = 0.6)
+
+  # Fit models and add lines for each LOH_per
+  models <- Trisomy_LOH_data %>%
+    group_by(LOH_per) %>%
+    summarise(model = list(lm(RDR ~ BAF, data = .)), .groups = 'drop')
+
+  # Add lines based on model coefficients
+  for (i in seq_along(models$model)) {
+    mod <- models$model[[i]]
+    coefs <- coef(mod)
+    intercept <- coefs[1]
+    slope <- coefs[2]
+    plot <- plot +
+      geom_abline(intercept = intercept, slope = slope)
+  }
+
+plot <- ggplot() +
+    labs(title = "Model Lines for RDR vs BAF Across LOH Percentages",
+         x = "Biallelic Frequency (BAF)",
+         y = "Relative DNA Ratio (RDR)") +
+    theme_minimal()
+
+  # Add each line from the model_data
+  for (i in seq_len(nrow(model_results))) {
+    current_equation <- model_results$equation[i]
+    current_loh_per <- model_results$LOH_per[i]
+    plot <- plot + 
+      stat_function(data = model_results, 
+                    aes(color = as.factor(current_loh_per)), 
+                    fun = function(x) eval(parse(text = current_equation)))
+  }
+
+
+
+P1=plot_regression_with_data(Trisomy_LOH_data2, model_data=Trisomy_data,Ylim=c(1.1,2),Xlim=c(0,0.5),Title="Trisomy_LOH") +facet_grid(~LOH_type)+geom_point(data=results,aes(x=BAF,y=RDR), size = 4)
+
+
+ Trisomy_LOH_model$model_summary
+```
+```{r}
+library(dplyr)
+library(ggplot2)
+
+plot_trisomy_loh_models <- function(tumor_purity, LOH_per, LOH_type) {
+  # Generate data
+  Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                  LOH_per = LOH_per, 
+                                  LOH_type = LOH_type) %>%
+    mutate(LOH_purity = Tumor_Purity * LOH_per,
+           RDR = 1 + Tumor_Purity / 2,
+           BAF = case_when(
+             LOH_type == "Gain" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0.67 * LOH_purity,
+             LOH_type == "Loss" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity),
+             TRUE ~ NA_real_  # Default case
+           ))
+
+  # Create a plot
+  plot <- ggplot(Trisomy_LOH_data, aes(x = BAF, y = RDR)) +
+    geom_point(aes(color = as.factor(LOH_per)), alpha = 0.6)
+
+  # Fit models and add lines for each LOH_per
+  models <- Trisomy_LOH_data %>%
+    group_by(LOH_per) %>%
+    summarise(model = list(lm(RDR ~ BAF, data = .)), .groups = 'drop')
+
+  # Add lines based on model coefficients
+  for (i in seq_along(models$model)) {
+    mod <- models$model[[i]]
+    coefs <- coef(mod)
+    intercept <- coefs[1]
+    slope <- coefs[2]
+    plot <- plot +
+      geom_abline(intercept = intercept, slope = slope)
+  }
+
+  # Configure the plot aesthetics
+  plot <- plot + 
+    labs(title = "Model Lines for RDR vs BAF Across LOH Percentages",
+         x = "Biallelic Frequency (BAF)",
+         y = "Relative DNA Ratio (RDR)") +
+    scale_color_discrete(name = "LOH %") +
+    theme_minimal()
+
+  return(plot)
+}
+
+# Example usage with parameters
+tumor_purity <- seq(0.4, 0.9, by = 0.1)
+LOH_per <- seq(0.1, 1, by = 0.1)
+LOH_type <- c("Gain", "Loss")
+
+# Generate and display the plot
+plot <- plot_trisomy_loh_models(tumor_purity, LOH_per, LOH_type)
+print(plot)
+
+```
+
+```{r}
+plot <- plot_trisomy_loh_models(tumor_purity, LOH_per, LOH_type)
+```
+
+
+```{r}
+library(ggplot2)
+
+Trisomy_tetrasomy_RDR_BAF <- function(TP) {
+    # Validate TP input
+    if (!is.numeric(TP) || TP < 0 || TP > 1) {
+        stop("TP must be a numeric value between 0 and 1.")
+    }
+  
+    # Define proportions of tetrasomy within the tumor component
+    tetrasomy_percentage <- seq(0, 1-TP, by = 0.1)
+  
+    # Calculate the percentage of normal cells
+    normal_percentage <- 1 - TP-tetrasomy_percentage
+  
+    # Create a data frame to store proportions and calculations
+    data <- data.frame(Tetrasomy_in_Tumor = tetrasomy_percentage,
+                       Normal_Percentage = normal_percentage,
+                       TP = TP)
+  
+    # Calculate RDR and BAF for each proportion scenario
+    # RDR calculations assume a linear adjustment based on the trisomy and tetrasomy percentage
+ #   data$RDR <- 1 + 0.5 * (TP - data$Tetrasomy_in_Tumor) + 1 * data$Tetrasomy_in_Tumor
+  data$RDR <- TP*1.5+ data$Tetrasomy_in_Tumor*2+ (1-data$Tetrasomy_in_Tumor-TP)
+  # BAF calculation: for simplicity, assuming trisomy BAF = 1/3 and tetrasomy BAF = 0.5
+  data$BAF <-  TP*0.33+(1-TP)*0.5
+
+    # Plotting RDR vs BAF
+    p <- ggplot(data, aes(x = BAF, y = RDR, color = as.factor(Tetrasomy_in_Tumor * 100))) +
+         geom_point(size = 5) +
+         scale_color_manual(values = rainbow(n = length(tetrasomy_percentage))) +
+         labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)",
+              title = paste("RDR and BAF for Trisomy with TP =", TP),
+              color = "Tetrasomy in Tumor (%)") +
+         theme_minimal()
+
+    # Print the plot
+    print(p)
+}
+
+# Example usage of the function with TP = 0.7
+Trisomy_tetrasomy_RDR_BAF(0.7)
+
+
+```
+```{r}
+
+# Calculate RDR for trisomy
+ 
+
+# Create a data frame to store these values
+ 
+
+tumor_purity <- seq(0.2, 0.7, by = 0.1)
+LOH_per <- seq(0.1, 1, by = 0.1)
+LOH_type <- c("Loss")
+Tetrasomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR =1+tumor_purity , BAF = 0.5)
+
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Tetrasomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for Tetrasomy
+Tetrasomy_LOH_data$RDR <- 1+Tetrasomy_LOH_data$Tumor_Purity
+
+# Calculate BAF based on LOH type
+Tetrasomy_LOH_data2 <- Tetrasomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Loss" ~ 0.5 * (1 - LOH_purity) + 0.25 * LOH_purity ,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+P2=plot_regression_with_data(Tetrasomy_LOH_data2, model_data=Tetrasomy_data,Ylim=c(1.1,2),Xlim=c(0,0.51),Title="Tetrasomy_LOH") +geom_point(data=results,aes(x=BAF,y=RDR), size = 4)
+P2
+```
+
+
+```{r,fig.width=16,fig.height=6}
+cowplot::plot_grid(P1,P2,nrow=1, rel_widths = c(2,1))
+```
+
+
+
+```{r}
+Trisomy_tetrasomy_RDR_BAF <- function() {
+    # Define a sequence of TP values from 0.5 to 1.0, in steps of 0.1
+    TP_values <- seq(0.5, 1.0, by = 0.1)
+    
+    # Initialize an empty data frame to store results
+    data <- data.frame()
+
+    # Loop over each TP value
+    for (TP in TP_values) {
+        # Define proportions of tetrasomy within the tumor component
+        tetrasomy_percentage <- seq(0, 1 - TP, by = 0.1)
+        
+        # Calculate the percentage of normal cells
+        normal_percentage <- 1 - TP - tetrasomy_percentage
+        
+        # Temporary data frame to hold calculations for current TP
+        temp_data <- data.frame(
+            TP = TP,
+            Tetrasomy_in_Tumor = tetrasomy_percentage,
+            Normal_Percentage = normal_percentage,
+            RDR = TP * 1.5 + tetrasomy_percentage * 2 + normal_percentage,
+            BAF = TP * 0.33 + (1 - TP) * 0.5
+        )
+        
+        # Append to the main data frame
+        data <- rbind(data, temp_data)
+    }
+
+    # Plotting RDR vs BAF
+    p <- ggplot(data, aes(x = BAF, y = RDR, color = as.factor(TP))) +
+         geom_point(size = 5) +
+         scale_color_manual(values = rainbow(length(TP_values))) +
+         labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)",
+              title = "RDR and BAF for Varying Trisomy Purities",
+              color = "Tumor Purity (TP)") +
+         theme_minimal() +
+         theme(plot.title = element_text(hjust = 0.5))
+  
+    # Print the plot
+    print(p)
+}
+
+# Call the function to plot
+Trisomy_tetrasomy_RDR_BAF()
+
+```
+
+```{r}
+library(ggplot2)
+
+Tetrasomy_with_LOH_BAF <- function(TP) {
+    # Validate TP input
+    if (!is.numeric(TP) || TP < 0 || TP > 1) {
+        stop("TP must be a numeric value between 0 and 1.")
+    }
+  
+    # Define percentages of LOH (0% to 100% of the tumor component)
+    LOH_percentage <- seq(0, (1-TP), by = 0.1)  # From 0% to 100% in 10% increments
+  
+    # Create a data frame to store the results
+    data <- data.frame(
+        LOH_Percentage = LOH_percentage,
+        TP = TP
+    )%>%mutate(BAF=((1-LOH_Percentage)*0.5+0.25*(LOH_Percentage)))
+  
+    # Calculate RDR and BAF for each proportion scenario
+    data$RDR <- 2  # For tetrasomy, the RDR is 2.0, assuming TP is all tetrasomic cells
+    #data$BAF <- TP*0.5+0.25*(1-data$LOH_percentage)
+   
+    # Plotting RDR vs BAF
+    p <- ggplot(data, aes(x =TP, y = BAF, color = as.factor(LOH_Percentage * 100))) +
+         geom_point(size = 5) +
+         scale_color_manual(values = rainbow(11)) +
+         labs(x = "Tetrasomy purity", y = "BAF",
+              title = paste("BAF with Tetrasomy and LOH (TP =", TP, ")"),
+              color = "LOH Percentage (%)") +
+         theme_minimal()  
+  
+    # Print the plot
+    print(p)
+}
+
+# Example usage of the function with TP = 0.7
+Tetrasomy_with_LOH_BAF <- function() {
+    # Define TP values from 0.5 to 0.9 with an increment of 0.1
+    TP_values <- seq(0.3, 0.9, by = 0.1)
+    
+    # Initialize an empty data frame to store results
+    data <- data.frame()
+
+    # Iterate over TP values
+    for (TP in TP_values) {
+        # Define percentages of LOH (from 0% up to 100% of non-tumor component)
+        LOH_percentage <- seq(0, 1 - TP, by = 0.1)
+
+        # Calculate BAF based on LOH percentages
+        temp_data <- data.frame(
+            TP = TP,
+            LOH_Percentage = LOH_percentage,
+            BAF = (1 - LOH_percentage) * 0.5 + 0.25 * LOH_percentage,  # Calculation of BAF
+            RDR = 2  # RDR is fixed for tetrasomy
+        )
+
+        # Append to main data frame
+        data <- rbind(data, temp_data)
+    }
+
+    # Plotting BAF across TP and LOH percentages
+    p <- ggplot(data, aes(x = TP, y = BAF, color = as.factor(LOH_Percentage))) +
+         geom_point(size = 5) +
+         scale_color_manual(values = rainbow(length(unique(data$LOH_Percentage)))) +
+         labs(x = "Tumor Purity (TP)", y = "Biallelic Frequency (BAF)",
+              title = "BAF Across Tetrasomy Tumor Purity and LOH Percentages",
+              color = "LOH Percentage (%)") 
+
+    # Print the plot
+    print(p)
+}
+
+# Call the function to execute and plot
+Tetrasomy_with_LOH_BAF()
+
+```
+
