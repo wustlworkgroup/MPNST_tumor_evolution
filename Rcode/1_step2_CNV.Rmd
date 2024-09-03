@@ -1275,7 +1275,7 @@ if (grepl("PDX",Sample_name)){
 }
 
 
-
+if (nrow(Data_select)>0) {
 results <- Data_select%>%.[,c("Chromosome","Start", "End","BAF","Norm_RDR")]%>%dplyr::rename(RDR=Norm_RDR) %>%
   rowwise() %>%
   mutate(
@@ -1298,13 +1298,17 @@ Data_select_3 <- Data_select_2 %>%
 
 G2=ggplot(Data_select_3 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
 cowplot::plot_grid(G1,G2)
+categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_3[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV = ifelse(is.na(CNV2), CNV, ifelse(CNV2 == "Trisomy", "Trisomy", CNV)))
+
+} else {
+  categorized_data<- categorize_CNV(df)
+}
 ```
 
 
 
 ```{r,fig.width=6,fig.height=6,include=T}
 
-categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_3[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV = ifelse(is.na(CNV2), CNV, ifelse(CNV2 == "Trisomy", "Trisomy", CNV)))
 out=categorized_data%>%dplyr::filter(CNV=="Unclassified")
 
 P5 =ggplot(categorized_data, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3)+ggtitle("Cluster_CNV2")
