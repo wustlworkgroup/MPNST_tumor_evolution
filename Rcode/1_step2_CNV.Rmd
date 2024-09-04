@@ -1001,11 +1001,12 @@ categorize_CNV <- function(data) {
       (Norm_RDR >= normal_setting$Norm_RDR[1] & Norm_RDR <= normal_setting$Norm_RDR[2]) & (BAF >= normal_setting$BAF[1] & BAF <= normal_setting$BAF[2]), "Normal",
       ifelse((Norm_RDR >= LOH_setting$Norm_RDR[1] & Norm_RDR <= LOH_setting$Norm_RDR[2]) & (BAF >= LOH_setting$BAF[1] & BAF <= LOH_setting$BAF[2]), "LOH",
       #ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF >= trisomy_setting$BAF[1] & BAF <= trisomy_setting$BAF[2], "Trisomy",
+      ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF<=0.3, "Trisomy", # Trisomy+LOH
       ifelse(Norm_RDR >= tetrasomy_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_setting$Norm_RDR[2] & BAF >= tetrasomy_setting$BAF[1] & BAF <= tetrasomy_setting$BAF[2], "Tetrasomy",
       ifelse(Norm_RDR >= tetrasomy_LOH_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_LOH_setting$Norm_RDR[2] & BAF >= tetrasomy_LOH_setting$BAF[1] & BAF <= tetrasomy_LOH_setting$BAF[2], "Tetrasomy_LOH",
       ifelse(Norm_RDR >= het_loss_setting$Norm_RDR[1] & Norm_RDR <= het_loss_setting$Norm_RDR[2] & BAF >= het_loss_setting$BAF[1] & BAF <= het_loss_setting$BAF[2], "Het_loss",
       ifelse(Norm_RDR >= homo_loss_setting$Norm_RDR[1] & Norm_RDR <= homo_loss_setting$Norm_RDR[2] & (BAF >= homo_loss_setting$BAF[2] | BAF <= homo_loss_setting$BAF[1]), "Homo_loss",
-      "Unclassified")))))))
+      "Unclassified"))))))))
   
   return(data)
 }
@@ -1057,7 +1058,7 @@ if (max(Somatic_seg$RDR)>3) {
   
   Data_filter=Somatic_seg%>%dplyr::filter(RDR<3)
   Outlier=Somatic_seg%>%dplyr::filter(RDR>=3)%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%mutate(Length=End-Start)
-  knitr::kable(Outlier,caption = "Seg with RDR >2.5")%>%kableExtra::kable_styling(latex_options = c("scale_down")  )%>%kableExtra:: column_spec(9, width = "3cm")
+  knitr::kable(Outlier,caption = "Seg with RDR >2.5")%>%kableExtra::kable_styling(latex_options = c("scale_down")  )%>%kableExtra:: column_spec(2,9, width = "3cm")
 
 } else{
   
@@ -1203,17 +1204,19 @@ homo_loss_setting <- Genomic_settings$homo_loss
 ```
 
 ```{r}
-tumor_purity <- seq(0.2, 1, by = 0.1)
+# tumor_purity <- seq(0.2, 1, by = 0.1)
+# 
+# # Calculate RDR for trisomy
+# RDR_trisomy <- 1 + tumor_purity / 2
+# 
+# # Calculate BAF for trisomy assuming AAB scenario
+# BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
+# 
+# # Create a data frame to store these values
+# Trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
+# trisomy_model <- lm(BAF ~ RDR, data = Trisomy_data)
+#Trisomy purity (0.3-0.9, RDR 1.1~1.45, BAF 0.35 0.47)
 
-# Calculate RDR for trisomy
-RDR_trisomy <- 1 + tumor_purity / 2
-
-# Calculate BAF for trisomy assuming AAB scenario
-BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
-
-# Create a data frame to store these values
-Trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
-trisomy_model <- lm(BAF ~ RDR, data = Trisomy_data)
 Trisomy_model_predict <- function(model, RDR, BAF, threshold=0.5) {
   
     # Validate model input
@@ -1245,7 +1248,14 @@ Trisomy_model_predict <- function(model, RDR, BAF, threshold=0.5) {
 ```
 
 
-```{r,include=T,fig.width=10,fig.height=6}
+```{r}
+trisomy_data <- data.frame(
+  Tumor_Purity = seq(0.4, 0.9, by = 0.1),
+  RDR = 1 + seq(0.4, 0.9, by = 0.1) / 2,
+  BAF = 0.33 * seq(0.4, 0.9, by = 0.1) + 0.5 * (1 - seq(0.4, 0.9, by = 0.1))
+)
+trisomy_model <- lm(BAF ~ RDR, data = trisomy_data)
+
 if (Max_out$Value<0.95 | Max_out$Value>1.05) {
  df=P2[[2]]
 } else {
@@ -1253,13 +1263,6 @@ if (Max_out$Value<0.95 | Max_out$Value>1.05) {
   
 }
 
-
-#Trisomy purity (0.3-0.9, RDR 1.1~1.45, BAF 0.35 0.47)
-trisomy_data <- data.frame(
-  Tumor_Purity = seq(0.4, 0.9, by = 0.1),
-  RDR = 1 + seq(0.4, 0.9, by = 0.1) / 2,
-  BAF = 0.33 * seq(0.4, 0.9, by = 0.1) + 0.5 * (1 - seq(0.4, 0.9, by = 0.1))
-)
 
 Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.45&BAF>0.3&BAF<0.47)
 
@@ -1276,32 +1279,34 @@ if (grepl("PDX",Sample_name)){
 
 
 if (nrow(Data_select)>0) {
-results <- Data_select%>%.[,c("Chromosome","Start", "End","BAF","Norm_RDR")]%>%dplyr::rename(RDR=Norm_RDR) %>%
-  rowwise() %>%
-  mutate(
+ results <- Data_select%>%.[,c("Chromosome","Start", "End","BAF","Norm_RDR")]%>%dplyr::rename(RDR=Norm_RDR) %>%
+   rowwise() %>%
+   mutate(
     Analysis = list(Trisomy_model_predict(trisomy_model , RDR, BAF, threshold = 0.02))
   )%>%ungroup() %>%  # Optionally remove old columns if you only want the results
   tidyr::unnest_wider(col = Analysis)%>%arrange(RDR)
 
-Data_select_2=Data_select%>%left_join(.,results[,c(1,2,3,9)])%>%mutate(CNV=ifelse(Is_Close_To_Line==T,"Trisomy","Other"))
-G1=ggplot(Data_select_2,aes(x=BAF,y=Norm_RDR,color=factor(Is_Close_To_Line)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
-
-
-coef_intercept <- coef(trisomy_model)[1]
-coef_slope <- coef(trisomy_model)[2]
-
-# Adding line calculation to results
-Data_select_3 <- Data_select_2 %>%
-  mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
-  mutate(CNV2=ifelse(BAF < Line_BAF,"Trisomy",CNV) )%>%dplyr::select(-Line_BAF) # Select points where BAF is less than the calculated
-
-
-G2=ggplot(Data_select_3 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
-cowplot::plot_grid(G1,G2)
-categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_3[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV = ifelse(is.na(CNV2), CNV, ifelse(CNV2 == "Trisomy", "Trisomy", CNV)))
+  Data_select_2=Data_select%>%left_join(.,results[,c(1,2,3,9)])%>%mutate(CNV=ifelse(Is_Close_To_Line==T,"Trisomy","Other"))
+  G1=ggplot(Data_select_2,aes(x=BAF,y=Norm_RDR,color=factor(Is_Close_To_Line)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+  coef_intercept <- coef(trisomy_model)[1]
+   coef_slope <- coef(trisomy_model)[2]
+  # Adding line calculation to results
+   Data_select_3 <- Data_select_2 %>%
+      mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
+       mutate(CNV2=ifelse(BAF < Line_BAF,"Trisomy",CNV) )%>%dplyr::select(-Line_BAF) # Select points where BAF is less than the calculated
+   G2=ggplot(Data_select_3 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+   
+   categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_3[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV = ifelse(is.na(CNV2), CNV, ifelse(CNV2 == "Trisomy", "Trisomy", CNV)))
 
 } else {
   categorized_data<- categorize_CNV(df)
+}
+```
+
+
+```{r,include=T,fig.width=10,fig.height=6}
+if (nrow(Data_select)>0) {
+cowplot::plot_grid(G1,G2)
 }
 ```
 

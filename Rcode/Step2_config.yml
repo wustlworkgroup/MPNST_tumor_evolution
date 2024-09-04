@@ -2,7 +2,7 @@ default:
   document:
     author: "Yang Lyu"
   PT_ID: "JH-2-023"
-  Sample_input: 2
+  Sample_input: 5
   tumor_type: "Tumor" # " PDX" or  "Tumor"
   Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
   Email: "lyu.yang@wustl.edu"
@@ -38,16 +38,16 @@ default:
 
     PDX:
       normal:
-        Norm_RDR: [0.85, 1.2]
+        Norm_RDR: [0.85, 1.1]
         BAF: [0.4, 0.5]
       LOH:
-        Norm_RDR: [0.85, 1.2]
+        Norm_RDR: [0.85, 1.1]
         BAF: [0, 0.4]
       trisomy:
-        Norm_RDR: [1.2, 1.5]
+        Norm_RDR: [1.1, 1.5]
         BAF: [0, 0.4]
       tetrasomy:
-        Norm_RDR: [1.2, 2.05]
+        Norm_RDR: [1.1, 2.05]
         BAF: [0.4, 0.5]
       tetrasomy_LOH:
         Norm_RDR: [1.5, 2.05]
