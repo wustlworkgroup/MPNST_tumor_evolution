@@ -118,23 +118,10 @@ dir.create(Process_path)
 
 ## Somatic MTAP_CDKN2A in exome level
 
-
-```{r}
-Download_path <- file.path(Process_path, "Somatic_CNV")
-dir(Download_path)
-BAF_Seg <- readr::read_tsv(file.path(Download_path, paste0(Sample_name, ".af.igv.seg"))) %>%
-      as.data.frame() %>%
-      dplyr::rename(BAF = Segment_Mean)%>%dplyr::filter(Chromosome=="chr9")
-
-
-```
-
-
 ```{r}
 nchr="chr9"
 filename=paste0(Sample_name,"_",nchr,"_RDR_anno.rdata")
 if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
-
  Data_path=file.path( CNV_mdoel_path,PT_ID)
  Tumor_RD_path=list.files(Data_path,pattern = "clean.denoisedCR.tsv",full.names = T,recursive = T)%>%.[grepl(Sample_name,.)]
  RD_data=readr::read_tsv(Tumor_RD_path)%>%as.data.frame()%>%setNames(c("CHR","Other"))%>%dplyr::filter(CHR!="@SQ")%>%dplyr::filter(CHR!="@RG")%>%
@@ -149,13 +136,14 @@ if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
  # BAF_data_anno=add_gene_names_to_BAF(BAF_data)
  dir.create(file.path(Process_path,PT_ID,"MTAP_CDKN2A"),recursive = T)
   save(RD_data_anno,BAF_data,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
+ 
 } 
 
 load(file.path(Process_path,PT_ID,filename))
 RD_data_anno_norm=RD_data_anno%>%mutate(rdr=rdr/Bias_set) #Bias_set is from step2
 #BAF_data_anno
- 
 BAF_data_2=BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%dplyr::filter(alt_nucleotide!="N")%>%dplyr::filter(alt_count>4)%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)
+
 
 ```
 
@@ -172,6 +160,7 @@ gene_rdr_level=summarize_rdr_by_gene(RD_data_anno_norm)
 
 RDR_data_no_gene=RD_data_anno_norm%>%dplyr::filter(gene_name=="")%>%mutate(gene_name=paste0("unknown",1:nrow(.)))
 gene_rdr_level2=rbind(RDR_data_no_gene[,colnames(gene_rdr_level)],gene_rdr_level)
+
 #segment_results_by_rdr=detect_segments_in_rdr(RD_data_anno_norm,threshold = 0.2, min_segment_size = 8)
 segment_results_by_gene <- detect_segments_in_rdr_by_gene (gene_rdr_level2,threshold = 0.1, min_segment_size = 1)
 rdr_data=segment_results_by_gene[[1]]%>%dplyr::rename(rdr=mean_rdr)
@@ -186,6 +175,7 @@ for (i in 1:nrow(Choose_Seg_rdr)) {
 Choose_seg_baf2=do.call("rbind", Choose_seg_baf)
 Gene_list_in_region=Choose_Seg_rdr$genes%>%strsplit(.,",")%>%unlist()%>%.[!grepl("unknown",.)]
 Choose_seg_baf_gene=Choose_seg_baf2%>%group_by(gene_name)%>%summarise(baf=mean(baf))
+
 ```
 
 
@@ -207,17 +197,20 @@ if (file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_
 
 ```{r,fig.width=16,fig.height=10,include=T}
 cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=2)
+
 ```
 
 
 \newpage
 
 ```{r,include=T}
+
 Choose_Seg_rdr2=Choose_Seg_rdr%>%mutate(genes=gsub(",", ", ",genes))
 knitr::kable(Choose_Seg_rdr2,caption =   "Segmentation")%>%kableExtra::kable_styling(latex_options = c("scale_down"))%>%
   kableExtra::column_spec(4, width = "5cm")
 # 
 knitr::kable(Choose_seg_baf_gene,caption = "baf of genes in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+
 ```
 
 ```{r}
@@ -232,6 +225,7 @@ knitr::kable(Gene_GATK_seg[,c("Sample","Chromosome","Start","End","BAF","CNV","N
 
 
 ```{r}
+
 Gene_baf=Choose_seg_baf2[,c(1:4,7,11)]%>%as.data.frame()
 if (nrow (Gene_baf) >0) {
   
