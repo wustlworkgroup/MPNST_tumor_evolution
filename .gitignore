@@ -20,3 +20,18 @@ rad.json
 *.flf
 #Test results file
 TestResults.xml
+Rcode/JH-2-002_5__MTAP_CDKN2A_Loss.log
+Rcode/JH-2-002_6__MTAP_CDKN2A_Loss.log
+Rcode/JH-2-031_1__MTAP_CDKN2A_Loss.log
+Rcode/JH-2-031_2__MTAP_CDKN2A_Loss.log
+Rcode/JH-2-031_3__MTAP_CDKN2A_Loss.log
+*.pdf
+*.txt
+Rcode/Supp_code.html
+*.tex
+Rcode/.DS_Store
+.DS_Store
+*.html
+*.html
+*.log
+*.html

@@ -121,8 +121,7 @@ dir.create(Process_path)
 ```{r}
 nchr="chr9"
 filename=paste0(Sample_name,"_",nchr,"_RDR_anno.rdata")
-if (!file.exists(file.path(Process_path,PT_ID,filename) )){
-
+if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
  Data_path=file.path( CNV_mdoel_path,PT_ID)
  Tumor_RD_path=list.files(Data_path,pattern = "clean.denoisedCR.tsv",full.names = T,recursive = T)%>%.[grepl(Sample_name,.)]
  RD_data=readr::read_tsv(Tumor_RD_path)%>%as.data.frame()%>%setNames(c("CHR","Other"))%>%dplyr::filter(CHR!="@SQ")%>%dplyr::filter(CHR!="@RG")%>%
@@ -130,22 +129,22 @@ if (!file.exists(file.path(Process_path,PT_ID,filename) )){
    mutate  (RDR=2^(as.numeric(RDR)),START=as.integer(START),END=as.integer(END))%>%dplyr::filter(CHR==nchr)
 
   RD_data_anno=label_bed_with_genes(RD_data)
-  BAF_path=list.files(Data_path,pattern = "Counts_cleaned.tsv",full.names = T,recursive = T)%>%.[grepl(Sample_name,.)]
+  BAF_path=list.files(Data_path,pattern = "Counts_cleaned_over_5.tsv",full.names = T,recursive = T)%>%.[grepl(Sample_name,.)]
 
-  BAF_data=readr::read_tsv(BAF_path)%>%dplyr::filter(CONTIG==nchr)%>%dplyr::rename(CHR=CONTIG)
+  BAF_data=readr::read_tsv(BAF_path)%>%dplyr::filter(CONTIG=="chr9")%>%dplyr::rename(CHR=CONTIG) 
+  colnames(BAF_data)=tolower(colnames(BAF_data))
+ # BAF_data_anno=add_gene_names_to_BAF(BAF_data)
+ dir.create(file.path(Process_path,PT_ID,"MTAP_CDKN2A"),recursive = T)
+  save(RD_data_anno,BAF_data,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
  
-  BAF_data_anno=add_gene_names_to_BAF(BAF_data)
-
-  save(RD_data_anno,BAF_data_anno,file=file.path(Process_path,PT_ID,filename))
 } 
 
 load(file.path(Process_path,PT_ID,filename))
 RD_data_anno_norm=RD_data_anno%>%mutate(rdr=rdr/Bias_set) #Bias_set is from step2
 #BAF_data_anno
- 
-BAF_data_anno2=BAF_data_anno%>%mutate(baf=alt_count/(ref_count+alt_count))%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))
+BAF_data_2=BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%dplyr::filter(alt_nucleotide!="N")%>%dplyr::filter(alt_count>4)%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)
 
- 
+
 ```
 
 
@@ -161,24 +160,22 @@ gene_rdr_level=summarize_rdr_by_gene(RD_data_anno_norm)
 
 RDR_data_no_gene=RD_data_anno_norm%>%dplyr::filter(gene_name=="")%>%mutate(gene_name=paste0("unknown",1:nrow(.)))
 gene_rdr_level2=rbind(RDR_data_no_gene[,colnames(gene_rdr_level)],gene_rdr_level)
-gene_baf_level=summarize_baf_by_gene(BAF_data_anno2)
-gene_baf_rdr=gene_rdr_level%>%left_join(.,gene_baf_level)%>%as.data.frame()
 
-BAF_data_anno3=BAF_data_anno2%>%mutate(start=position,end=position)
-
-segment_results_by_rdr=detect_segments_in_rdr(RD_data_anno_norm,threshold = 0.2, min_segment_size = 8)
-segment_results_by_gene <- detect_segments_in_rdr_by_gene (gene_rdr_level2)
-# Plot detected segments on chromosome 1
-
+#segment_results_by_rdr=detect_segments_in_rdr(RD_data_anno_norm,threshold = 0.2, min_segment_size = 8)
+segment_results_by_gene <- detect_segments_in_rdr_by_gene (gene_rdr_level2,threshold = 0.1, min_segment_size = 1)
 rdr_data=segment_results_by_gene[[1]]%>%dplyr::rename(rdr=mean_rdr)
-Choose_Seg=rdr_data%>%dplyr::filter(grepl("MTAP|CDKN2A",genes))
+Choose_Seg_rdr=rdr_data%>%dplyr::filter(grepl("MTAP|CDKN2A",genes))
+Choose_seg_baf=list()
+for (i in 1:nrow(Choose_Seg_rdr)) {
+  Data=Choose_Seg_rdr[1,]
+  Baf_select =BAF_data_2%>%dplyr::filter(start>(Data$start-1))%>%dplyr::filter(end<(Data$end+1)) 
+  Choose_seg_baf[[i]]=add_gene_names_to_BAF(Baf_select)
 
-Choose_Seg_2=Choose_Seg[,c(1:3)]%>%mutate(start=min(start),end=max(end))%>%distinct()
+}
+Choose_seg_baf2=do.call("rbind", Choose_seg_baf)
+Gene_list_in_region=Choose_Seg_rdr$genes%>%strsplit(.,",")%>%unlist()%>%.[!grepl("unknown",.)]
+Choose_seg_baf_gene=Choose_seg_baf2%>%group_by(gene_name)%>%summarise(baf=mean(baf))
 
-
-Gene_list_in_region=Choose_Seg$genes%>%strsplit(.,",")%>%unlist()%>%.[!grepl("unknown",.)]
-
-Genes_Data=gene_baf_rdr%>%dplyr::filter(gene_name%in%Gene_list_in_region)%>%arrange(start)
 ```
 
 
@@ -187,27 +184,33 @@ if (file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_
   load (file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_gene_level_Seg.rdata")))
   
 } else {
-  segment_plot_detail <-  ggplotify::as.ggplot(function() {plot_detected_segments (RD_data_anno_norm,rdr_data,gene_baf_rdr,Gene_chorom=Choose_Seg_2,plot_zoom = T)})
- segment_plot <-  ggplotify::as.ggplot(function() {plot_detected_segments (RD_data_anno_norm,rdr_data,gene_baf_rdr,Gene_chorom=Choose_Seg_2,plot_zoom = F)})
- save(gene_rdr_level2,gene_baf_level,gene_baf_rdr,segment_results_by_gene,Choose_Seg,Genes_Data,segment_plot,segment_plot_detail,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_gene_level_Seg.rdata")))
+  segment_plot_detail <-  ggplotify::as.ggplot(function() {plot_detected_segments_genelevel (RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = T)})
+ segment_plot <-  ggplotify::as.ggplot(function() {plot_detected_segments (RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = F)})
+ save(gene_rdr_level2,Choose_Seg_rdr,Choose_seg_baf2,segment_plot,segment_plot_detail,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_gene_level_Seg.rdata")))
 
   
 }
 
+#Test=plot_detected_segments_genelevel(RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = T)
 ```
 
 
-```{r,fig.width=16,fig.height=8,include=T}
-cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=1)
+```{r,fig.width=16,fig.height=10,include=T}
+cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=2)
+
 ```
 
 
 \newpage
 
 ```{r,include=T}
-knitr::kable(Choose_Seg,caption =   "Copy number variant in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
 
-knitr::kable(Genes_Data,caption = "Copy number variant in genes")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+Choose_Seg_rdr2=Choose_Seg_rdr%>%mutate(genes=gsub(",", ", ",genes))
+knitr::kable(Choose_Seg_rdr2,caption =   "Segmentation")%>%kableExtra::kable_styling(latex_options = c("scale_down"))%>%
+  kableExtra::column_spec(4, width = "5cm")
+# 
+knitr::kable(Choose_seg_baf_gene,caption = "baf of genes in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+
 ```
 
 ```{r}
@@ -215,20 +218,58 @@ Gene_GATK_seg=Data_update_10_refine%>%dplyr::filter(grepl("MTAP|,CDKN2A,|,CDKN2A
 ```
 
 ```{r,include=T}
-knitr::kable(Gene_GATK_seg[,c(1,2,3,4,8,13,14,9)],caption = "GATK segmentation",full_width=F)%>%
-  kableExtra::column_spec(8, width = "5cm")%>%
+knitr::kable(Gene_GATK_seg[,c("Sample","Chromosome","Start","End","BAF","CNV","Norm_RDR","Gene_list")],caption = "GATK segmentation",full_width=F)%>%
+  kableExtra::column_spec(8, width = "3cm")%>%
   kableExtra::column_spec(1, width = "2cm")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
 ```
 
 
 ```{r}
-Gene_baf=BAF_data_anno2%>%dplyr::filter(gene_name%in%c("MTAP","CDKN2A","CDKN2B"))
+
+Gene_baf=Choose_seg_baf2[,c(1:4,7,11)]%>%as.data.frame()
 if (nrow (Gene_baf) >0) {
   
   knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
 
 }
 ```
+
+
+```{r}
+Gene_rdr=RD_data_anno_norm%>%dplyr::filter(start> min(Choose_Seg_rdr$start-1))%>%dplyr::filter(end< max(Choose_Seg_rdr$end+1))
+if (nrow (Gene_baf) >0) {
+  
+  knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+
+}
+```
+
+
+
+
+```{r}
+gene_name <- "MTAP"
+# Retrieve all transcripts for MTAP
+transcripts <-ensembldb::transcripts(EnsDb.Hsapiens.v86, filter = AnnotationFilter::GeneNameFilter(gene_name))
+transcripts%>%as.data.frame()
+transcript_id="ENST00000380172" # cannonical
+exons_for_transcript =ensembldb::exons(EnsDb.Hsapiens.v86, filter = AnnotationFilter::TxIdFilter(transcript_id))%>%as.data.frame()%>%mutate(Exon_n=paste0("exon",1:nrow(.)))%>%mutate(exon_start=start)
+
+MTAP_rdr=Gene_rdr%>%dplyr::filter(gene_name=="MTAP")
+# Annotate input data with exon information
+annotated_data <- annotate_with_exons(MTAP_rdr, transcript_id)%>%left_join(.,exons_for_transcript[,c("exon_start","Exon_n")])%>%as.data.frame()
+annotated_data_rdr_Baf <- annotate_with_exons_and_baf(Choose_seg_baf2, annotated_data )
+
+```
+
+
+```{r,include=T}
+#knitr::kable(exons_for_transcript[,c(1:4,8)],caption =paste0("MTAP:",transcript_id))%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+knitr::kable(annotated_data_rdr_Baf[,c( "gene_name" ,"chr" ,   "start", "end",  "rdr" ,"baf","transcript_id", "Exon_n" )],caption =paste0( "exons in MTAP:", transcript_id))%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+
+
 
 ```{r}
 knitr::knit_exit()

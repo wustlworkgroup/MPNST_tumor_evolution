@@ -73,8 +73,6 @@ Process_path=file.path(Path,"Processed")
 base_output_dir <- paste0(config$Path,"/","Report")
 Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
 ```
-
-
 ```{r,include=F}
 # Check the version of the synapser package
 synapser_version <- packageVersion("synapser")
@@ -336,6 +334,9 @@ if (! file.exists(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_R
   load(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
   Samples=data.frame(Sample_name=names(Somatic_CNV),Sample_n=1:length(names(Somatic_CNV)))
 }
+
+
+
 ```
 
 
