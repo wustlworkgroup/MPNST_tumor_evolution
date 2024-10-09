@@ -1,59 +1,255 @@
 ---
-title: "test"
-output: html_document
-date: "2024-08-28"
+title: "model setting"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    keep_tex: true
+    latex_engine: pdflatex
+    fig_caption: yes
+    highlight: haddock
+    number_sections: yes
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F,warnings =F, message=F,include=F)
 ```
 
 ```{r,include=T}
 library(ggplot2)
 library(dplyr)
 # Generate a sequence for tumor purity from 0 to 1 with increments of 0.01
-tumor_purity <- seq(0.4, 0.9, by = 0.1)
+tumor_purity <- seq(0.2, 0.9, by = 0.1)
+```
 
+
+```{r,include=T}
 # Calculate RDR for trisomy
 RDR_trisomy <- 1 + tumor_purity / 2
-
 # Calculate BAF for trisomy assuming AAB scenario
 BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
-
 # Create a data frame to store these values
 trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
 
-# Plotting
-# ggplot(trisomy_data, aes(x = Tumor_Purity)) +
-#   geom_line(aes(y = RDR, colour = "RDR"), size = 1) + 
-#   geom_line(aes(y = BAF, colour = "BAF"), size = 1) +
-#   labs(x = "Tumor Purity (TP)", y = "Value") +
-#   scale_colour_manual(values = c("RDR" = "red", "BAF" = "blue"),
-#                       name = "Measure",
-#                       breaks = c("RDR", "BAF"),
-#                       labels = c("Relative DNA Ratio (RDR)", "Biallelic Frequency (BAF)")) +
-#   theme_minimal() +
-#   ggtitle("RDR and BAF vs. Tumor Purity for Trisomy") +
-#   theme(
-#     plot.title = element_text(hjust = 0.5),
-#     legend.position = "bottom"
-#   )
-ggplot(trisomy_data, aes(x = BAF, y = RDR, color = Tumor_Purity)) +
-  geom_point(aes(size = Tumor_Purity), stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+LOH_per <- seq(0, 1, by = 0.2)
+LOH_type <- c("Gain", "Loss")
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+LOH_data=data.frame(Tumor_Purity = tumor_purity, RDR = 1, BAF = (1-tumor_purity)*0.5+tumor_purity*0)
+
+Het_loss_data=data.frame(Tumor_Purity = tumor_purity, RDR = (1-tumor_purity)*1+tumor_purity*0.5, BAF =(1-tumor_purity)*0.5)
+
+Homo_loss_data=data.frame(Tumor_Purity = tumor_purity, RDR = 1-tumor_purity, BAF = 0.5)
+
+Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for trisomy
+Trisomy_LOH_data$RDR <- 1 + Trisomy_LOH_data$Tumor_Purity / 2
+
+# Calculate BAF based on LOH type
+Trisomy_LOH_data2 <- Trisomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Gain" ~ 0.33 * (Tumor_Purity *(1-LOH_purity)) + 0.5 * (1 - Tumor_Purity) + 0.67 * (Tumor_Purity*LOH_purity),
+    LOH_type == "Loss" ~ 0.33 * (Tumor_Purity *(1-LOH_purity)) + 0.5 * (1 - Tumor_Purity) + 0 * (Tumor_Purity*LOH_purity),
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%mutate(BAF=ifelse(BAF>0.5,1-BAF,BAF))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+Trisomy_LOH_data2_loss=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Loss" )
+Trisomy_LOH_data2_gain=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Gain" )
+
+Trisomy_LOH_data2_gain_3=Trisomy_LOH_data2_gain%>%dplyr::filter(LOH_per<0.5)
+
+Tetrasomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR =1+tumor_purity , BAF = 0.5)
+
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Tetrasomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for Tetrasomy
+Tetrasomy_LOH_data$RDR <- 1+Tetrasomy_LOH_data$Tumor_Purity
+
+Tetrasomy_LOH_data2 <- Tetrasomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Loss" ~ 0.5 * (1 - Tumor_Purity*LOH_purity) + 0.25 *  (Tumor_Purity*LOH_purity) ,
+    LOH_type == "Gain" ~ 0.5 * (1 - Tumor_Purity*LOH_purity) + 1 *  (Tumor_Purity*LOH_purity) ,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%mutate(BAF=ifelse(BAF>0.5,1-BAF,BAF))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+Tetrasomy_LOH_data_loss=Tetrasomy_LOH_data2%>%dplyr::filter(LOH_type=="Loss")
+Tetrasomy_LOH_data_gain=Tetrasomy_LOH_data2%>%dplyr::filter(LOH_type=="Gain")
+```
+
+```{r}
+P_n1=ggplot(LOH_data, aes(x = BAF, y = RDR, size = as.character(Tumor_Purity))) +
+  geom_point(color="black", stroke = 2) +  # Correct size mapping and move stroke outside of aes()
   scale_color_gradient(low = "blue", high = "red") +  # Setup color gradient for Tumor Purity
-  scale_size_continuous(guide = "none") +  # Optionally remove size legend if it clutters the plot
-  geom_text(aes(label = sprintf("%.1f", Tumor_Purity)), vjust = -1, hjust = 1.2) +  # Label points
+ # scale_size_continuous(guide = "none")+
   xlim(0, 0.5) +  # Set x-axis limits
-  ylim(1, 2) +  # Set y-axis limits
+    ylim(0, 1.2) +   # Set y-axis limits
   labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)", 
-       title = "Relationship between RDR and BAF across Tumor Purities") +
-  theme_minimal() +
+       title = "LOH")  +
   theme(
     plot.title = element_text(hjust = 0.5),
     legend.position = "right"
-  )
+  )+
+  theme_minimal()
+
+P_n2=ggplot(Homo_loss_data, aes(x = BAF, y = RDR, size = as.character(Tumor_Purity))) +
+  geom_point(color="blue", stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+  scale_color_gradient(low = "blue", high = "red") +  # Setup color gradient for Tumor Purity
+ # scale_size_continuous(guide = "none")+
+  xlim(0, 0.5) +  # Set x-axis limits
+   ylim(0, 1.2) +   # Set y-axis limits
+  labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)", 
+       title = "Homo_loss")  +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"
+  )+
+  theme_minimal()
+
+P_n3=ggplot(Het_loss_data, aes(x = BAF, y = RDR, size = as.character(Tumor_Purity))) +
+  geom_point(color="green", stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+  scale_color_gradient(low = "blue", high = "red") +  # Setup color gradient for Tumor Purity
+ # scale_size_continuous(guide = "none")+
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(0, 1.2) +  # Set y-axis limits
+  labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)", 
+       title = "Het_loss")  +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"
+  )+
+  theme_minimal()
+```
+```{r,fig.width=18,fig.height=6,include=T}
+cowplot::plot_grid(P_n1,P_n2,P_n3,nrow=1)
+```
+
+```{r,include=F}
+P1=ggplot(trisomy_data, aes(x = BAF, y = RDR, size = Tumor_Purity)) +
+  geom_point(color="blue", stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+  scale_color_gradient(low = "blue", high = "red") +  # Setup color gradient for Tumor Purity
+  scale_size_continuous(guide = "none")+
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)", 
+       title = "Trisomy")  +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"
+  )+
+  theme_minimal()
+
+P2=ggplot(Tetrasomy_data, aes(x = BAF, y = RDR, size= Tumor_Purity)) +
+  geom_point(color="red", stroke = 2) +  # Correct size mapping and move stroke outside of aes()
+  scale_color_gradient(low = "blue", high = "red") +  # Setup color gradient for Tumor Purity
+  scale_size_continuous(guide = "none")+
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(x = "Biallelic Frequency (BAF)", y = "Relative DNA Ratio (RDR)", 
+       title = "Tetrasomy")  +
+  theme(
+    plot.title = element_text(hjust = 0.5),
+    legend.position = "right"
+  )+
+  theme_minimal()
+P3=ggplot(Trisomy_LOH_data2_loss, aes(x = BAF, y = RDR, color = as.character(Tumor_Purity))) +
+  geom_point(aes(size=LOH_per)) +
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(
+    title = "Trisomy+LOH_1",
+    x = "Biallelic Frequency (BAF)",
+    y = "Relative DNA Ratio (RDR)",
+    color = "Tumor Purity"
+  )  +
+  theme(
+    plot.title = element_text(hjust = 0.5),  # Center the plot title
+    legend.position = "right"                # Position the legend
+  )+
+  theme_minimal()
+
+P4=ggplot(Trisomy_LOH_data2_gain_3, aes(x = BAF, y = RDR, color = as.character(Tumor_Purity))) +
+  geom_point(aes(size=LOH_per)) +
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(
+    title = "Trisomy+LOH2",
+    x = "Biallelic Frequency (BAF)",
+    y = "Relative DNA Ratio (RDR)",
+    color = "Tumor Purity"
+  )  +
+  theme(
+    plot.title = element_text(hjust = 0.5),  # Center the plot title
+    legend.position = "right"                # Position the legend
+  )+
+  theme_minimal()
+
+P5=ggplot(Tetrasomy_LOH_data_loss, aes(x = BAF, y = RDR, color = as.character(Tumor_Purity))) +
+  geom_point(aes(size=LOH_per)) +
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(
+    title = "Tetrasomy+LOH",
+    x = "Biallelic Frequency (BAF)",
+    y = "Relative DNA Ratio (RDR)",
+    color = "Tumor Purity"
+  )  +
+  theme(
+    plot.title = element_text(hjust = 0.5),  # Center the plot title
+    legend.position = "right"                # Position the legend
+  )+
+  theme_minimal()
+
+P6=ggplot(Tetrasomy_LOH_data_gain, aes(x = BAF, y = RDR, color = as.character(Tumor_Purity))) +
+  geom_point(aes(size=LOH_per)) +
+  xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(
+    title = "Tetrasomy+LOH2",
+    x = "Biallelic Frequency (BAF)",
+    y = "Relative DNA Ratio (RDR)",
+    color = "Tumor Purity"
+  )  +
+  theme(
+    plot.title = element_text(hjust = 0.5),  # Center the plot title
+    legend.position = "right"                # Position the legend
+  )+
+  theme_minimal()
 
 
+```
+
+
+```{r,fig.width=12,fig.height=16,include=T}
+cowplot::plot_grid(P1,P2,P3,P4,P5,P6,nrow=3)
+```
+```{r}
+Tetrasomy_LOH_data_line_model=Tetrasomy_LOH_data2%>%dplyr::filter(LOH_per==1)%>%dplyr::filter(LOH_type=="Gain")
+
+```
+
+
+```{r,include=T}
+ggplot(Tetrasomy_LOH_data2, aes(x = BAF, y = RDR))+geom_point(color = "red")+ geom_point(data=trisomy_data, aes(x = BAF, y = RDR), color="black",stroke = 2)+geom_smooth(data=trisomy_data,method = "lm", se = FALSE, color = "blue")+ geom_point(data=Tetrasomy_LOH_data_gain, aes(x = BAF, y = RDR,color="black"), stroke = 2)+geom_smooth(data=Tetrasomy_LOH_data_line_model, method = "lm", se = FALSE, color = "red")+geom_point(data=Trisomy_LOH_data2_loss,aes(x = BAF, y = RDR,color="blue")) +geom_point(data=Trisomy_LOH_data2_gain_3,aes(x = BAF, y = RDR,color="pink"))+ ylim(c(1.1,1.5))+theme_minimal()
+
+
+```
+
+```{r}
+knitr::knit_exit()
+```
+
+
+```{r,include=T}
 Trisomy_model <- lm(BAF ~ RDR, data = trisomy_data)
 
 # Display the summary of the model to see the coefficients
@@ -69,89 +265,102 @@ cat(sprintf("The linear equation is: BAF = %.2f * RDR + %.2f", a, b), "\n")
 
 ggplot(trisomy_data, aes(x = BAF, y = RDR, color = factor(Tumor_Purity)))+geom_point(data=trisomy_data)+geom_smooth(data=trisomy_data,method = "lm", se = FALSE) + # Label points
   xlim(0, 0.5) +  # Set x-axis limits
-  ylim(1, 2) 
+  ylim(1, 1.5) 
 #+geom_point(aes(size = Tumor_Purity), stroke = 2) +  # Correct size mapping and move stroke outside of aes()
 #  scale_color_gradient(low = "blue", high = "red") 
       
 ```
+
+
+
+
+
 # Trisomy +LOH
 ```{r,fig.width=6,fig.height=10}
-LOH_per <- seq(0, 1, by = 0.1)
-LOH_type <- c("Gain", "Loss")
-# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
-Trisomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
-                                LOH_per = LOH_per, 
-                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
 
-# Calculate RDR for trisomy
-Trisomy_LOH_data$RDR <- 1 + Trisomy_LOH_data$Tumor_Purity / 2
-
-# Calculate BAF based on LOH type
-Trisomy_LOH_data2 <- Trisomy_LOH_data %>%
-  mutate(BAF = case_when(
-    LOH_type == "Gain" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0.67 * LOH_purity,
-    LOH_type == "Loss" ~ 0.33 * (Tumor_Purity - LOH_purity) + 0.5 * (1 - Tumor_Purity) + 0 * LOH_purity,
-    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
-  ))%>%mutate(BAF=ifelse(BAF>0.5,1-BAF,BAF))%>%
-  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
-                       "LOH %:", LOH_per, 
-                       sep = " "))
-
-Trisomy_LOH_data2_loss=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Loss" )
-Trisomy_LOH_data2_gain=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Gain" )
 triangle_data <- data.frame(
   BAF = c(0.4, 0.5, 0.5),
   RDR = c(1, 1.5, 1)
 )
-P1=ggplot(Trisomy_LOH_data2_loss, aes(x = BAF, y = RDR,size=factor(LOH_per), color = factor(Tumor_Purity)))+geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1,size=0.3)+
+P1=ggplot(Trisomy_LOH_data2_loss, aes(x = BAF, y = RDR,size=factor(LOH_per), color = factor(Tumor_Purity)))+geom_point(stroke=0.5)+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1,size=0.3)+
   xlim(0, 0.5) +  # Set x-axis limits
-  ylim(1, 2) 
-
-
-P2=ggplot(Trisomy_LOH_data2_gain, aes(x = BAF, y = RDR, size=factor(LOH_per),color = factor(Tumor_Purity)))+geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1,size=0.3)+
-  xlim(0, 0.5) +  # Set x-axis limits
-  ylim(1, 2) 
-
-
-
+  ylim(1, 1.5)
 ```
+
+
+```{r,fig.width=6,fig.height=10}
+Trisomy_LOH_data2_gain_2=Trisomy_LOH_data2%>%dplyr::filter(LOH_type == "Gain" )%>%dplyr::filter(LOH_per<0.7) # If LOH_per>0.7, the BAF will be shifted back
+# data=Trisomy_LOH_data2_gain_2%>%dplyr::filter(LOH_per==as.character(i))
+#  coefficients <- coef(data)
+#  a <- coefficients[2]  # Slope
+#  b <- coefficients[1]  # Intercept
+# 
+# # Print the linear equation
+# cat(sprintf("The linear equation is: BAF = %.2f * RDR + %.2f", a, b), "\n")
+# 
+# # Plot with all enhancements
+# name=paste0("LOH_per:",i)
+
+cowplot::plot_grid(plotlist = Plot_list,ncol=2)
+```
+
 
 # Tetrasomy+ LOH
 
 ```{r}
-tumor_purity <- seq(0.4, 0.9, by = 0.1)
-LOH_per <- seq(0, 1, by = 0.1)
-LOH_type <- c("Loss")
-Tetrasomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR =1+tumor_purity , BAF = 0.5)
 
-# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
-Tetrasomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
-                                LOH_per = LOH_per, 
-                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+```
 
-# Calculate RDR for Tetrasomy
-Tetrasomy_LOH_data$RDR <- 1+Tetrasomy_LOH_data$Tumor_Purity
 
+```{r}
 # Calculate BAF based on LOH type
-Tetrasomy_LOH_data2 <- Tetrasomy_LOH_data %>%
-  mutate(BAF = case_when(
-    LOH_type == "Loss" ~ 0.5 * (1 - LOH_purity) + 0.25 * LOH_purity ,
-    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
-  ))%>%
-  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
-                       "LOH %:", LOH_per, 
-                       sep = " "))
+
 
 #P2=plot_regression_with_data(Tetrasomy_LOH_data2, model_data=Tetrasomy_data,Ylim=c(1.1,2),Xlim=c(0,0.51),Title="Tetrasomy_LOH") +geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.5, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.3)
-P3=ggplot(Tetrasomy_LOH_data2, aes(x = BAF, y = RDR, color = factor(Tumor_Purity)))+geom_point()+geom_rect(aes(xmin = 0.4, xmax = 0.45, ymin = 1, ymax = 1.5), fill=NA,alpha = 0.1)+
+P7=ggplot(Tetrasomy_LOH_data2, aes(x = BAF, y = RDR, color = factor(Tumor_Purity)))+geom_point(aes(size = factor(LOH_per)), stroke = 0.1) +xlim(0, 0.5) +  # Set x-axis limits
+  ylim(1, 1.5) 
+
+
+
+coefficients <- coef(Tetrasomy_LOH_data_line_model)
+a <- coefficients[2]  # Slope
+b <- coefficients[1]  # Intercept
+
+# Print the linear equation
+cat(sprintf("The linear equation is: BAF = %.2f * RDR + %.2f", a, b), "\n")
+
+# Plot with all enhancements
+ggplot(Tetrasomy_LOH_data_line_model, aes(x = BAF, y = RDR, color = factor(Tumor_Purity))) +
+  geom_point(size = 2) +
+  geom_smooth(method = "lm", se = FALSE, color = "blue") +  # Add linear model fit line
+  geom_text(aes(label = Tumor_Purity), vjust = -1, size = 3, show.legend = FALSE) +  # Label points
   xlim(0, 0.5) +  # Set x-axis limits
-  ylim(1, 2) 
+  ylim(1, 1.5) +  # Set y-axis limits
+  labs(
+    title = "RDR vs. BAF with Linear Model Fit",
+    x = "Biallelic Frequency (BAF)",
+    y = "Relative DNA Ratio (RDR)",
+    color = "Tumor Purity"
+  ) +
+  theme_minimal() +
+  theme(
+    plot.title = element_text(hjust = 0.5),  # Center the plot title
+    legend.position = "right"                # Position the legend
+  )
+
+
 ```
 
-```{r,fig.width=8,fig.height=6}
-cowplot::plot_grid(P1,P2,P3,nrow=1,labels=c("Trisomy_LOH_loss","Trisomy_LOH_Gain","Tetrasomy_LOH_loss"))
+
+```{r,fig.width=12,fig.height=12}
+cowplot::plot_grid(P1,P2,P3,P4,nrow=2,labels=c("Trisomy_LOH_loss","Trisomy_LOH_Gain","Tetramy","Tetrasomy_LOH_loss"))
 ```
 
+
+
+```{r,fig.width=12,fig.height=6}
+cowplot::plot_grid(P2,P4,nrow=1,labels=c("Trisomy_LOH","Tetrasomy_LOH_loss"))
+```
 
 
 ```{r}

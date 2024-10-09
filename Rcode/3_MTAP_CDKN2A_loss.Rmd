@@ -1,0 +1,1529 @@
+---
+title: "`r paste0(config::get(file = 'Step2_config.yml')$PT_ID,'_',config::get(file = 'Step2_config.yml')$Sample_input,'_MTAP_CDKN2A_Loss')`"
+author: "`r config::get(file = 'Step2_config.yml')$document$author`"
+date: "`r Sys.Date()`"
+output:
+  pdf_document:
+    keep_tex: true
+    latex_engine: pdflatex
+    fig_caption: yes
+    highlight: haddock
+    number_sections: yes
+
+knit: (
+  function(inputFile, encoding) {
+    config=config::get(file = 'Step2_config.yml') 
+    
+    pSubTitle <- paste0(config$PT_ID,"_",config$Sample_input,"__MTAP_CDKN2A_Loss.pdf")
+    
+    base_output_dir=file.path(config$Path,"Report","MTAP_CDKA2A")
+    
+    DIR=file.path(base_output_dir, config$PT_ID)
+    
+    rmarkdown::render( 
+      input       = inputFile, 
+      encoding    = encoding, 
+      output_file = pSubTitle,
+      output_dir =DIR )})
+---
+
+```{r,include=F}
+rm(list=ls())
+```
+
+
+```{r,setup, include=FALSE}
+knitr::opts_chunk$set(echo = F,warnings =F, message=F,include=F)
+options(knitr.table.format = 'markdown',encoding = 'UTF-8',warnings =F, message=F ) 
+# Check and create output directory if it doesn't exist
+config <- config::get(file = 'Step2_config.yml')
+Path <- config$Path
+base_output_dir=file.path(Path,"Report")
+output_dir <- file.path(base_output_dir, config$PT_ID)
+if (!dir.exists(output_dir)) {
+  dir.create(output_dir, recursive = TRUE)
+}
+
+```
+
+
+```{r}
+library(dplyr)
+library(ggplot2)
+```
+
+
+```{r,include=F}
+PT_ID <- config$PT_ID
+Email <- config$Email
+Reference_path <- config$Reference_path
+Sample_input=config$Sample_input%>%as.integer()
+Rcode_path=file.path(Path,"Rcode",PT_ID)
+Rdata_path=file.path(Path,"Rdata",PT_ID )
+Rawdata_path=file.path(Path,"Rawdata",PT_ID)
+Process_path=file.path(Path,"Processed")
+Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
+Reference_path="/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
+CNV_mdoel_path="/Volumes/H_Drive_4/JH_Biobank_somatic_CNV/Tumor_Model_seg"
+
+dir.create(file.path(Process_path,PT_ID,"MTAP_CDKN2A"))
+```
+
+```{r}
+
+source(file.path(getwd(),"Rfunction.R"))
+
+```
+
+
+```{r}
+# The data from step1
+dir(Process_path)
+load(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+Tumor_samples=PT_Sample_info%>%dplyr::filter(tumorType!="Normal")
+RDR_BAF_samples=names(Somatic_CNV)
+Sample_name=RDR_BAF_samples[Sample_input]
+```
+
+```{r}
+
+load(file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
+cgwtools::lsdata(file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
+
+Normal=Data_update_10_refine%>%dplyr::filter(CNV=="Normal")
+Bias_set=unique(as.numeric(Normal$RDR/Normal$Norm_RDR))%>%.[1]%>%round(.,2)
+```
+
+
+```{r,include=T}
+print(paste0("Bias:", Bias_set))
+```
+
+
+```{r,include=T}
+knitr::kable(Sample_name)%>%kableExtra::kable_styling()
+```
+
+
+```{r,include=F}
+dir(Public_database_path)
+dir.create(Rdata_path)
+dir.create(Rawdata_path)
+dir.create(Process_path)
+#output_dir="/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Output/JH-2-002"
+# download Hg38_gene_chr_position.csv from synapse syn26376828" in your reference pathay
+
+```
+
+
+## Somatic MTAP_CDKN2A in exome level
+
+
+```{r}
+Download_path <- file.path(Process_path, "Somatic_CNV")
+dir(Download_path)
+BAF_Seg <- readr::read_tsv(file.path(Download_path, paste0(Sample_name, ".af.igv.seg"))) %>%
+      as.data.frame() %>%
+      dplyr::rename(BAF = Segment_Mean)%>%dplyr::filter(Chromosome=="chr9")
+
+
+```
+
+
+```{r}
+nchr="chr9"
+filename=paste0(Sample_name,"_",nchr,"_RDR_anno.rdata")
+if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
+
+ Data_path=file.path( CNV_mdoel_path,PT_ID)
+ Tumor_RD_path=list.files(Data_path,pattern = "clean.denoisedCR.tsv",full.names = T,recursive = T)%>%.[grepl(Sample_name,.)]
+ RD_data=readr::read_tsv(Tumor_RD_path)%>%as.data.frame()%>%setNames(c("CHR","Other"))%>%dplyr::filter(CHR!="@SQ")%>%dplyr::filter(CHR!="@RG")%>%
+   dplyr::filter(CHR!="CONTIG")%>%tidyr::separate(Other,c("START","END","RDR"),sep="\t")%>%
+   mutate  (RDR=2^(as.numeric(RDR)),START=as.integer(START),END=as.integer(END))%>%dplyr::filter(CHR==nchr)
+
+  RD_data_anno=label_bed_with_genes(RD_data)
+  BAF_path=list.files(Data_path,pattern = "Counts_cleaned_over_5.tsv",full.names = T,recursive = T)%>%.[grepl(Sample_name,.)]
+
+  BAF_data=readr::read_tsv(BAF_path)%>%dplyr::filter(CONTIG=="chr9")%>%dplyr::rename(CHR=CONTIG) 
+  colnames(BAF_data)=tolower(colnames(BAF_data))
+ # BAF_data_anno=add_gene_names_to_BAF(BAF_data)
+ dir.create(file.path(Process_path,PT_ID,"MTAP_CDKN2A"),recursive = T)
+  save(RD_data_anno,BAF_data,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
+} 
+
+load(file.path(Process_path,PT_ID,filename))
+RD_data_anno_norm=RD_data_anno%>%mutate(rdr=rdr/Bias_set) #Bias_set is from step2
+#BAF_data_anno
+ 
+BAF_data_2=BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%dplyr::filter(alt_nucleotide!="N")%>%dplyr::filter(alt_count>4)%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)
+
+```
+
+
+```{r}
+gene_exon_counts <-RD_data_anno_norm %>%
+    group_by(gene_name) %>%
+    summarise(exon_count = n())
+summary(gene_exon_counts$exon_count)
+
+ 
+gene_rdr_level=summarize_rdr_by_gene(RD_data_anno_norm) 
+
+
+RDR_data_no_gene=RD_data_anno_norm%>%dplyr::filter(gene_name=="")%>%mutate(gene_name=paste0("unknown",1:nrow(.)))
+gene_rdr_level2=rbind(RDR_data_no_gene[,colnames(gene_rdr_level)],gene_rdr_level)
+#segment_results_by_rdr=detect_segments_in_rdr(RD_data_anno_norm,threshold = 0.2, min_segment_size = 8)
+segment_results_by_gene <- detect_segments_in_rdr_by_gene (gene_rdr_level2,threshold = 0.1, min_segment_size = 1)
+rdr_data=segment_results_by_gene[[1]]%>%dplyr::rename(rdr=mean_rdr)
+Choose_Seg_rdr=rdr_data%>%dplyr::filter(grepl("MTAP|CDKN2A",genes))
+Choose_seg_baf=list()
+for (i in 1:nrow(Choose_Seg_rdr)) {
+  Data=Choose_Seg_rdr[1,]
+  Baf_select =BAF_data_2%>%dplyr::filter(start>(Data$start-1))%>%dplyr::filter(end<(Data$end+1)) 
+  Choose_seg_baf[[i]]=add_gene_names_to_BAF(Baf_select)
+
+}
+Choose_seg_baf2=do.call("rbind", Choose_seg_baf)
+Gene_list_in_region=Choose_Seg_rdr$genes%>%strsplit(.,",")%>%unlist()%>%.[!grepl("unknown",.)]
+Choose_seg_baf_gene=Choose_seg_baf2%>%group_by(gene_name)%>%summarise(baf=mean(baf))
+```
+
+
+```{r}
+if (file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_gene_level_Seg.rdata")))) {
+  load (file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_gene_level_Seg.rdata")))
+  
+} else {
+  segment_plot_detail <-  ggplotify::as.ggplot(function() {plot_detected_segments_genelevel (RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = T)})
+ segment_plot <-  ggplotify::as.ggplot(function() {plot_detected_segments (RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = F)})
+ save(gene_rdr_level2,Choose_Seg_rdr,Choose_seg_baf2,segment_plot,segment_plot_detail,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_gene_level_Seg.rdata")))
+
+  
+}
+
+#Test=plot_detected_segments_genelevel(RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = T)
+```
+
+
+```{r,fig.width=16,fig.height=10,include=T}
+cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=2)
+```
+
+
+\newpage
+
+```{r,include=T}
+Choose_Seg_rdr2=Choose_Seg_rdr%>%mutate(genes=gsub(",", ", ",genes))
+knitr::kable(Choose_Seg_rdr2,caption =   "Segmentation")%>%kableExtra::kable_styling(latex_options = c("scale_down"))%>%
+  kableExtra::column_spec(4, width = "5cm")
+# 
+knitr::kable(Choose_seg_baf_gene,caption = "baf of genes in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+```{r}
+Gene_GATK_seg=Data_update_10_refine%>%dplyr::filter(grepl("MTAP|,CDKN2A,|,CDKN2A$",Gene_list))%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+```
+
+```{r,include=T}
+knitr::kable(Gene_GATK_seg[,c("Sample","Chromosome","Start","End","BAF","CNV","Norm_RDR","Gene_list")],caption = "GATK segmentation",full_width=F)%>%
+  kableExtra::column_spec(8, width = "3cm")%>%
+  kableExtra::column_spec(1, width = "2cm")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+
+```{r}
+Gene_baf=Choose_seg_baf2[,c(1:4,7,11)]%>%as.data.frame()
+if (nrow (Gene_baf) >0) {
+  
+  knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+
+}
+```
+
+
+```{r}
+Gene_rdr=RD_data_anno_norm%>%dplyr::filter(start> min(Choose_Seg_rdr$start-1))%>%dplyr::filter(end< max(Choose_Seg_rdr$end+1))
+if (nrow (Gene_baf) >0) {
+  
+  knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+
+}
+```
+
+
+
+
+```{r}
+gene_name <- "MTAP"
+# Retrieve all transcripts for MTAP
+transcripts <-ensembldb::transcripts(EnsDb.Hsapiens.v86, filter = AnnotationFilter::GeneNameFilter(gene_name))
+transcripts%>%as.data.frame()
+transcript_id="ENST00000380172" # cannonical
+exons_for_transcript =ensembldb::exons(EnsDb.Hsapiens.v86, filter = AnnotationFilter::TxIdFilter(transcript_id))%>%as.data.frame()%>%mutate(Exon_n=paste0("exon",1:nrow(.)))%>%mutate(exon_start=start)
+
+MTAP_rdr=Gene_rdr%>%dplyr::filter(gene_name=="MTAP")
+# Annotate input data with exon information
+annotated_data <- annotate_with_exons(MTAP_rdr, transcript_id)%>%left_join(.,exons_for_transcript[,c("exon_start","Exon_n")])%>%as.data.frame()
+annotated_data_rdr_Baf <- annotate_with_exons_and_baf(Choose_seg_baf2, annotated_data )
+
+```
+
+
+```{r,include=T}
+#knitr::kable(exons_for_transcript[,c(1:4,8)],caption =paste0("MTAP:",transcript_id))%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+knitr::kable(annotated_data_rdr_Baf[,c( "gene_name" ,"chr" ,   "start", "end",  "rdr" ,"baf","transcript_id", "Exon_n" )],caption =paste0( "exons in MTAP:", transcript_id))%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+```
+
+
+
+
+```{r}
+knitr::knit_exit()
+```
+
+
+
+```{r,fig.width=12,fig.height=6}
+# Display the plot
+print(segment_plot)
+
+Out=plot_gene_chr_plot(gene_chorom,rdr_data , "Sample_123") 
+```
+
+
+```{r}
+n_states <- 8
+hmm_model <- depmixS4::depmix(response = rdr ~ 1, family = gaussian(), nstates = n_states, data = RD_data_anno_norm)
+
+# Fit the HMM
+fitted_hmm <- depmixS4::fit(hmm_model)
+
+# Get the most likely sequence of hidden states using the Viterbi algorithm
+states <-  depmixS4::posterior(fitted_hmm)
+
+# Add predicted states to the data
+RD_data_anno_norm$state <- states$state
+
+# Visualize the segmented data with the predicted states
+library(ggplot2)
+ggplot(RD_data_anno_norm, aes(x = start, y = rdr, color = factor(state))) +
+  geom_point() +
+  labs(title = "HMM Segmentation of RDR Data", x = "Position", y = "Read Depth Ratio (RDR)", color = "State") +ylim(c(0,1.5))
+#+
+#  scale_color_manual(values = c("red", "blue", "green","grey"), labels = c("Loss1","Loss2" , "Normal", "Gain")) +
+#  theme_minimal()+ylim(c(0,1.5))
+```
+
+
+```{r}
+Gene_RDR=RD_data_anno_norm%>%dplyr::filter(grepl("MTAP", gene_name))
+
+gene_chorom=data.frame(chr="chr9", start=21967752,end=21995324) %>%mutate(symbol="CDKN2A")
+gene_chorom=data.frame(chr="chr9", start=21802636,end=21941115) %>%mutate(symbol="MTAP")
+
+gene_chorom=data.frame(chr="chr9", start=21802636,end=21995324) %>%mutate(symbol="MTAP_CDKN2A")
+
+#gene_chorom=data.frame(chr="chr9", start=21930691,end=22009237) %>%mutate(symbol="MTAP_CDKN2B homo deletion")
+#ene_RD=WEX_gene_somatic_GATK_TN_ratio_2(Gene_chorom=gene_chorom,PT_RD_file=Tumor_RD_path)%>%mutate(rdr=rdr/Bias_set)
+#Chrom_GATK_Gene_check(gene_chorom,PT_RD_file=Tumor_RD_path,Main="")
+Plot_GATK_RD_in_chr_zoom(gene_chorom,RD_data_anno_norm,Main="cut_0.2 ",ref_line=0.1)
+
+```
+
+```{r}
+plot_karyotype_chr <- function(nchr, Main, df, s1) {
+  # Create the karyotype plot
+  kp <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, plot.type = 5, main = Main)
+  
+  # Plot the regions
+  karyoploteR::kpPlotRegions(kp, data = df, col = "#F30943", border = "#F30943", r0 = 0, r1 = 2)
+  
+  # Add horizontal lines
+  karyoploteR::kpAbline(kp, h = 0.5, col = "green")
+  karyoploteR::kpAbline(kp, h = 0.25, col = "black")
+  
+  
+  # Plot the read depth ratio (RDR) using CopyNumberPlots
+  CopyNumberPlots::plotLRR(kp, s1, lrr.column = "rdr", r0 = 0, r1 = 2, labels = "Read depth ratio", ymin = 0, ymax = 2, add.axis = TRUE, axis.cex = 1, label.cex = 1, points.cex = 0.5)
+}
+
+plot_karyotype_grob_chr <- function(nchr, Main, df, s1) {
+  # Capture the plot as a grob using gridGraphics::grid.echo
+  gridGraphics::grid.echo(function() plot_karyotype_chr(nchr, Main, df, s1))
+  # Convert the grid output to a grob
+  grob <- grid::grid.grab()
+  return(grob)
+}
+
+plot_gene_chr_plot <- function(gene_chorom, Rd_data, Sample_name) {
+  # Load necessary libraries
+  library(karyoploteR)
+  library(ggplotify)
+  library(GenomicRanges)
+  library(CopyNumberPlots)
+  library(ensembldb)
+  library(EnsDb.Hsapiens.v86)
+  library(cowplot)
+  
+  # Call the GATK_Chrom_Gene_RD_2 function to get the necessary data
+  test <- GATK_Chrom_Gene_RD_2(gene_chorom, Rd_data, Main = Sample_name)
+  
+  # Set plot parameters
+  pp <- karyoploteR::getDefaultPlotParams(plot.type = 5)
+  pp$data1height <- 100
+  pp$data2height <- 100
+  pp$ideogramheight <- 0
+  pp$topmargin <- 10
+  
+  # Extract data from the test object
+  nchr <- test[[1]]
+  df <- test[[2]]
+  mean_RD <- test[[3]]
+  s1 <- test[[4]]
+  detail.region <- test[[5]]
+  Start <- test[[6]]
+  End <- test[[7]]
+  Gene_RD <- test[[8]]
+  
+  # Plot using the chromosome data
+  #p1 <- ggplotify::as.ggplot(plot_karyotype_grob_chr(nchr, Sample_name, df))
+  p1 <- ggplotify::as.ggplot(function() {plot_karyotype_chr (nchr, Sample_name, df, s1)} )
+  
+  
+  return(p1)
+  
+  
+  
+  
+}
+```
+
+
+
+
+
+
+```{r}
+plot_karyotype_2 <- function(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, detail.regions, Genelist, s1) {
+  
+  kp2 <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, zoom = detail.region, plot.params = pp, plot.type = 3, labels.plotter = NULL)
+  
+  # Add horizontal lines
+  karyoploteR::kpAbline(kp2, h = 1, col = "green", data.panel = 1)
+  karyoploteR::kpAbline(kp2, h = 0.5, col = "black", data.panel = 1)
+
+  # Plot gene names and RDR for each gene in mean_RD_df
+  for (i in seq_len(nrow(mean_RD_df))) {
+    gene_symbol <- mean_RD_df$symbol[i]
+    gene_start <- mean_RD_df$start[i]
+    gene_end <- mean_RD_df$end[i]
+    mean_RD_gene <- round(mean_RD_df$mean_RD[i], 2)
+
+    # Calculate x position (center of the gene region)
+    x_position <- (gene_start + gene_end) / 2
+
+    # Add text for each gene with its RDR value
+    karyoploteR::kpText(kp2, chr = nchr, x = x_position, y = (mean_RD_gene / 2) + 0.1, labels = paste0(gene_symbol, "_RDR: ", mean_RD_gene), data.panel = 1, cex = 0.8)
+  }
+
+  # Plot regions and labels
+  karyoploteR::kpPlotRegions(kp2, data = detail.regions, col = "#F30943", border = "#F30943", r0 = 0.1, r1 = 0.15, data.panel = 2)
+  karyoploteR::kpText(kp2, chr = nchr, x = Genelist$Mean_pos, y = Genelist$Y_position, labels = Genelist$symbol, data.panel = 2, cex = 0.3)
+
+  # Plot the read depth ratio (RDR) using CopyNumberPlots
+  CopyNumberPlots::plotLRR(kp2, s1, lrr.column = "rdr", r0 = 0, r1 = 1, labels = "Read depth ratio", ymin = 0, ymax = 1, add.axis = TRUE, axis.cex = 1, label.cex = 1, points.cex = 1, data.panel = 1)
+}
+
+
+# Capture the plot as a grob using grid.echo
+plot_karyotype_grob_2 <- function(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, detail.regions, Genelist, s1) {
+  # Use grid.echo to capture the plot
+  gridGraphics::grid.echo(function() plot_karyotype_2(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, detail.regions, Genelist, s1))
+  
+  # Capture the grob
+  grob <- grid::grid.grab()
+  
+  return(grob)
+}
+
+
+# Capture the plot as a grob using grid.echo
+plot_karyotype_grob_2 <- function(nchr, Main, detail.region, pp, mean_RD, Start, End, gene_chorom, mean_RD_1, detail.regions, Genelist, s1) {
+  # Capture the plot as a grob using gridGraphics::grid.echo
+  gridGraphics::grid.echo(function() plot_karyotype_2(nchr, Main, detail.region, pp, mean_RD, Start, End, gene_chorom, mean_RD_1, detail.regions, Genelist, s1))
+  # Convert the grid output to a grob
+  grob <- grid::grid.grab()
+  return(grob)
+}
+######################################################################
+
+GATK_Chrom_Gene_RD_2=function(Gene_chorom,RD_raw_data,Main){
+   plist=list()
+   # pp <- getDefaultPlotParams(plot.type=2)
+   # pp$data1height=100
+   # pp$ideogramheight=10
+   ##
+   colnames(RD_raw_data)=tolower(colnames(RD_raw_data))
+   Tumor_bbc_reform=RD_raw_data[,c("chr","start","end","rdr","gene_name")]
+   colnames(Tumor_bbc_reform)=tolower(colnames(Tumor_bbc_reform))
+   nchr=Gene_chorom$chr
+   RD_data=Gene_filter_from_segmentation_2(Gene_chorom,Tumor_bbc_reform)
+   colnames(RD_data)=tolower(colnames(RD_data)) 
+   Gene_chorom_2=Gene_chorom[,c("chr","start","end")]
+   Gene_RD=Gene_filter_from_segmentation_2(Gene_chorom,RD_data)
+    
+   mean_RD_df=Gene_RD%>%group_by(gene_name)%>%summarise(mean_RD=mean(rdr),start=min(start),end=max(end))%>%mutate(chr=nchr)
+   Start=min(Gene_RD$start)
+   End=max(Gene_RD$end)
+   Gene_chorom_2=data.frame(chr=nchr,start=Start,end=End)
+   df=data.frame(chr=nchr, start=Gene_chorom$start,end=Gene_chorom$end)
+   s1 <- CopyNumberPlots:: loadSNPData(Tumor_bbc_reform)
+   detail.region <-  regioneR::toGRanges(Gene_chorom_2,Gene_RD,Main,genome="hg38")
+   Output=list(nchr,df,mean_RD_df,s1,detail.region,Start,End,Gene_RD)
+   return(Output)
+}
+
+
+
+```
+
+
+```{r}
+
+plot_gene_plot <- function(gene_chorom, Rd_data, Sample_name) {
+  library(karyoploteR)
+  library(ggplotify)
+  library(GenomicRanges)
+  library(CopyNumberPlots)
+  library(ensembldb)
+  library(EnsDb.Hsapiens.v86)
+  library(cowplot)
+  
+  # Call the GATK_Chrom_Gene_RD function to get the necessary data
+  test <- GATK_Chrom_Gene_RD_2(gene_chorom, Rd_data, Main = Sample_name)
+  # Set plot parameters
+  pp <- karyoploteR::getDefaultPlotParams(plot.type = 5)
+  pp$data1height <- 100
+  pp$data2height <- 100
+  pp$ideogramheight <- 0
+  pp$topmargin <- 10
+  
+  # Extract data from test object
+  nchr <- test[[1]]
+  df <- test[[2]]
+  mean_RD<- test[[3]]
+  # mean_RD <- if (mean_RD_1 > 4) 4 else mean_RD_1
+  s1 = test[[4]]
+  detail.region <- test[[5]]
+  Start <- test[[6]]
+  End <- test[[7]]
+  Gene_RD <- test[[8]]
+  Main <- Sample_name
+  # Set up gene list based on genomic regions
+  #edb <- EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86
+  # chr <- gsub("chr", "", nchr)
+  # grf <- GRangesFilter(GenomicRanges::GRanges(chr, ranges = IRanges(Gene_RD$start, Gene_RD$end)), type = "any")
+  # 
+  # gn <- genes(edb, filter = grf)
+  Genelist <- mean_RD %>% as.data.frame()  %>%
+    mutate(N_row = row_number())
+  #%>%left_join(.,mean_RD,by="gene_name")
+
+  
+  if (nrow(Genelist) > 1) {
+    Genelist <- Genelist %>% mutate(Mean_pos = start + ((end - start) / 2), Y_position = ifelse(N_row %% 2 == 0, 0.17, 0.08))
+  } else {
+    Genelist <- Genelist %>% mutate(Mean_pos = start + ((end - start) / 2), Y_position = 0.17)
+  }
+  
+  
+  #colnames(Genelist)[1:3] <- c("chr", "start", "end")
+  #Genelist$chr <- paste0("chr", Genelist$chr)
+  
+  Genelist_range <- data.frame(chr = nchr, start = min(Genelist$start), end = max(Genelist$end))
+  detail.region <- regioneR::toGRanges(Genelist_range, Main, genome = "hg38")
+  Start <- min(Genelist$start)
+  End <- max(Genelist$end)
+  detail.regions <- regioneR::toGRanges(Genelist[,c("chr","start","end")], Main, genome = "hg38")
+  #p2 <- ggplotify::as.ggplot(plot_karyotype_grob_2(nchr, Main, detail.region, pp, mean_RD, Start, End, gene_chorom, mean_RD, detail.regions, Genelist, s1))
+  
+  p2 <- ggplotify::as.ggplot(function() {
+    plot_karyotype_2(nchr, Main, detail.region, pp, mean_RD, Start, End, gene_chorom, detail.regions, Genelist, s1)
+  })
+  return(p2)
+}
+
+
+plot_karyotype_2 <- function(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, detail.regions, Genelist, s1) {
+  
+  kp2 <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, zoom = detail.region, plot.params = pp, plot.type = 3, labels.plotter = NULL)
+  # Add horizontal lines
+  karyoploteR::kpAbline(kp2, h = 1, col = "green", data.panel = 1)
+  karyoploteR::kpAbline(kp2, h = 0.5, col = "black", data.panel = 1)
+  for (i in seq_len(nrow(mean_RD_df))) {
+    gene_symbol <- mean_RD_df$gene_name[i]
+    gene_start <- mean_RD_df$start[i]
+    gene_end <- mean_RD_df$end[i]
+    mean_RD_gene <- round(mean_RD_df$mean_RD[i], 2)
+
+    # Calculate x position (center of the gene region)
+    x_position <- (gene_start + gene_end) / 2
+
+    # Add text for each gene with its RDR value
+    karyoploteR::kpText(kp2, chr = nchr, x = x_position, y = mean_RD_gene  + 0.1, labels = paste0(gene_symbol, "_RDR: ", mean_RD_gene), data.panel = 1, cex = 0.8)
+  }
+
+  # Plot regions and labels
+  karyoploteR::kpPlotRegions(kp2, data = detail.regions, col = "#F30943", border = "#F30943", r0 = 0.1, r1 = 0.15, data.panel = 2)
+ # karyoploteR::kpText(kp2, chr = nchr, x = Genelist$Mean_pos, y = Genelist$Y_position, labels = Genelist$symbol, data.panel = 2, cex = 0.3)
+
+  # Plot the read depth ratio (RDR) using CopyNumberPlots
+ CopyNumberPlots::plotLRR(kp2, s1, lrr.column = "rdr", r0 = 0, r1 = 1, labels = "Read depth ratio", ymin = 0, ymax = 1, add.axis = TRUE, axis.cex = 1, label.cex = 1, points.cex = 1, data.panel = 1)
+}
+
+plot_karyotype_grob_2 <- function(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, detail.regions, Genelist, s1) {
+  # Capture the plot as a grob using gridGraphics::grid.echo
+  gridGraphics::grid.echo(function() plot_karyotype_2(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, detail.regions, Genelist, s1))
+  # Convert the grid output to a grob
+  grob <- grid::grid.grab()
+  return(grob)
+}
+```
+
+
+```{r}
+# Combine plots into a grid
+  plot_row <- cowplot::plot_grid(p1, p2, nrow = 1)
+  
+  title <- cowplot::ggdraw() +
+    draw_label(
+      gene_chorom$symbol,
+      fontface = 'bold',
+      x = 0,
+      hjust = 0
+    ) +
+    theme(plot.margin = margin(0, 0, 0, 7))
+  
+  out <- plot_grid(
+    title, plot_row,
+    ncol = 1,
+    rel_heights = c(0.1, 1)  # Adjust title margin heights
+  )
+  
+  return(out)
+```
+
+
+```{r}
+plot_karyotype_baf <- function(nchr, Main, detail.region, pp, BAF_df, Start, End, gene_chorom, detail.regions, Genelist) {
+  
+  # Create the karyotype plot
+  kp2 <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, zoom = detail.region, plot.params = pp, plot.type = 3, labels.plotter = NULL)
+  
+  # Add horizontal lines for reference
+  karyoploteR::kpAbline(kp2, h = 0.5, col = "green", data.panel = 1)  # BAF 0.5 line
+  karyoploteR::kpAbline(kp2, h = 0.25, col = "black", data.panel = 1) # BAF 0.25 line
+  
+  # Plot gene names and BAF values
+  for (i in seq_len(nrow(BAF_df))) {
+    gene_symbol <- BAF_df$gene_name[i]
+    gene_start <- BAF_df$start[i]
+    gene_end <- BAF_df$end[i]
+    baf_value <- round(BAF_df$mean_BAF[i], 2)
+
+    # Calculate x position (center of the gene region)
+    x_position <- (gene_start + gene_end) / 2
+
+    # Add text for each gene with its BAF value
+    karyoploteR::kpText(kp2, chr = nchr, x = x_position, y = baf_value + 0.05, labels = paste0(gene_symbol, "_BAF: ", baf_value), data.panel = 1, cex = 0.8)
+  }
+
+  # Plot genomic regions
+  karyoploteR::kpPlotRegions(kp2, data = detail.regions, col = "#F30943", border = "#F30943", r0 = 0.1, r1 = 0.15, data.panel = 2)
+  
+  # Plot the B-allele frequency (BAF)
+  for (i in seq_len(nrow(BAF_df))) {
+    baf_start <- BAF_df$start[i]
+    baf_end <- BAF_df$end[i]
+    baf_value <- BAF_df$mean_BAF[i]
+    
+    # Plot regions representing BAF values
+    baf_region <- GenomicRanges::GRanges(seqnames = nchr, ranges = IRanges(start = baf_start, end = baf_end))
+    karyoploteR::kpRect(kp2, chr = nchr, x0 = baf_start, x1 = baf_end, y0 = 0, y1 = baf_value, col = "#0000FF", border = "#0000FF", data.panel = 1)
+  }
+}
+
+
+ 
+```
+
+
+
+
+```{r}
+RDR_Data_prepare=GATK_Chrom_Gene_RD_2(gene_chorom,RD_data_anno_norm , "Sample_123") 
+BAF_data_prepare=GATK_Chrom_Gene_BAF(gene_chorom,RD_data_anno_norm , "Sample_123") 
+
+Out=plot_gene_chr_plot(gene_chorom,RD_data_anno_norm , "Sample_123") 
+Out2=plot_gene_plot(gene_chorom,RD_data_anno_norm , "Sample_123")
+```
+
+```{r}
+knitr::knit_exit()
+```
+
+
+```{r}
+# Function to plot chromosome-level data
+
+# Function to plot gene-level data
+plot_gene_plot <- function(gene_chorom, Rd_data, Sample_name) {
+  library(karyoploteR)
+  library(ggplotify)
+  library(GenomicRanges)
+  library(CopyNumberPlots)
+  library(ensembldb)
+  library(EnsDb.Hsapiens.v86)
+  library(cowplot)
+  
+  # Call the GATK_Chrom_Gene_RD_2 function to get the necessary data
+  test <- GATK_Chrom_Gene_RD_2(gene_chorom, Rd_data, Main = Sample_name)
+  return(test)
+  # Set plot parameters
+  pp <- karyoploteR::getDefaultPlotParams(plot.type = 5)
+  pp$data1height <- 100
+  pp$data2height <- 100
+  pp$ideogramheight <- 0
+  pp$topmargin <- 10
+  
+  # Extract data from the test object
+  nchr <- test[[1]]
+  df <- test[[2]]
+  mean_RD <- test[[3]]
+  detail.region <- test[[5]]
+  Start <- test[[6]]
+  End <- test[[7]]
+  Gene_RD <- test[[8]]
+  
+  # Prepare Genelist based on mean_RD data
+  Genelist <- mean_RD %>% as.data.frame() %>%
+    mutate(N_row = row_number())
+
+  if (nrow(Genelist) > 1) {
+    Genelist <- Genelist %>% mutate(Mean_pos = start + ((end - start) / 2), Y_position = ifelse(N_row %% 2 == 0, 0.17, 0.08))
+  } else {
+    Genelist <- Genelist %>% mutate(Mean_pos = start + ((end - start) / 2), Y_position = 0.17)
+  }
+  
+  # Create the region for detailed zoom
+  Genelist_range <- data.frame(chr = nchr, start = min(Genelist$start), end = max(Genelist$end))
+  detail.region <- regioneR::toGRanges(Genelist_range, Main = Sample_name, genome = "hg38")
+  
+  Start <- min(Genelist$start)
+  End <- max(Genelist$end)
+  
+  # Call the karyotype plot function for genes
+  p2 <- ggplotify::as.ggplot(plot_karyotype_grob_2(nchr, Main, detail.region, pp, mean_RD, Start, End, gene_chorom, Genelist))
+  
+  return(p2)
+}
+
+# Function to generate the karyotype plot
+plot_karyotype_2 <- function(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, Genelist) {
+  kp2 <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, zoom = detail.region, plot.params = pp, plot.type = 3, labels.plotter = NULL)
+  
+  # Add horizontal lines
+  karyoploteR::kpAbline(kp2, h = 1, col = "green", data.panel = 1)
+  karyoploteR::kpAbline(kp2, h = 0.5, col = "black", data.panel = 1)
+
+  # Plot gene names and RDR for each gene in mean_RD_df
+  for (i in seq_len(nrow(mean_RD_df))) {
+    gene_symbol <- mean_RD_df$symbol[i]
+    gene_start <- mean_RD_df$start[i]
+    gene_end <- mean_RD_df$end[i]
+    mean_RD_gene <- round(mean_RD_df$mean_RD[i], 2)
+
+    # Calculate x position (center of the gene region)
+    x_position <- (gene_start + gene_end) / 2
+
+    # Add text for each gene with its RDR value
+    karyoploteR::kpText(kp2, chr = nchr, x = x_position, y = (mean_RD_gene / 2) + 0.1, labels = paste0(gene_symbol, "_RDR: ", mean_RD_gene), data.panel = 1, cex = 0.8)
+  }
+
+  # Plot regions and labels
+  karyoploteR::kpPlotRegions(kp2, data = Genelist, col = "#F30943", border = "#F30943", r0 = 0.1, r1 = 0.15, data.panel = 2)
+  karyoploteR::kpText(kp2, chr = nchr, x = Genelist$Mean_pos, y = Genelist$Y_position, labels = Genelist$symbol, data.panel = 2, cex = 0.3)
+
+  # Plot the read depth ratio (RDR) using CopyNumberPlots
+  CopyNumberPlots::plotLRR(kp2, mean_RD_df, lrr.column = "rdr", r0 = 0, r1 = 1, labels = "Read depth ratio", ymin = 0, ymax = 1, add.axis = TRUE, axis.cex = 1, label.cex = 1, points.cex = 1, data.panel = 1)
+}
+
+# Function to capture plot as grob
+plot_karyotype_grob_2 <- function(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, Genelist) {
+  # Use grid.echo to capture the plot
+  gridGraphics::grid.echo(function() plot_karyotype_2(nchr, Main, detail.region, pp, mean_RD_df, Start, End, gene_chorom, Genelist))
+  
+  # Capture the grob
+  grob <- grid::grid.grab()
+  
+  return(grob)
+}
+
+```
+
+```{r,fig.width=8,fig.height=5}
+Out
+```
+
+```{r}
+knitr::knit_exit()
+```
+
+```{r}
+Test=plot_gene_chrom_RD(gene_chorom,Gene_RD , "Sample_123") 
+
+ßggplotify::as.ggplot(expression(Test))
+```
+```{r}
+create_karyoplot_gg <- function(df, s1, mean_RD) {
+  p1 <- ggplotify::as.ggplot(expression({
+    kp <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = "chr9", plot.type = 5, main = "Test")
+    karyoploteR::kpPlotRegions(kp, data = df, col = "#F30943", border = "#F30943", r0 = 0, r1 = mean_RD / 2)
+    karyoploteR::kpAbline(kp, h = 0.5, col = "green")
+    karyoploteR::kpAbline(kp, h = 0.25, col = "black")
+    CopyNumberPlots::plotLRR(kp, s1, lrr.column = "rdr", r0 = 0, r1 = 1, labels = "Read depth ratio", ymin = 0, ymax = 2, add.axis = TRUE, axis.cex = 1, label.cex = 1, points.cex = 0.5)
+  }))
+  
+  return(p1)
+}
+```
+
+
+## MTAP-CDKNA2B
+```{r,fig.height=10,fig.width=16}
+gene_chorom=gene_chorom%>%.[c("chr","start","end","symbol")]
+  # ID=All_PDX$individualID[i]
+  # Sample_path_list=file.path(Model_seg_path,ID)
+  # Tumor_path=list.files(Sample_path_list,pattern =paste0(ID,"_","Tumor_clean.denoisedCR.tsv"),recursive = T,full.names = T)
+  # PDX_path=list.files(Sample_path_list,pattern = "PDX_clean.denoisedCR.tsv",recursive = T,full.names = T)
+  # Sample_path_list=data.frame(Path=c(Tumor_path,PDX_path))%>%mutate(file_name=gsub(".*\\/","",Path))%>%mutate(Sample_ID=gsub("_clean.denoisedCR.tsv","",file_name))%>%mutate(individualID=gsub("_PDX","",Sample_ID))
+  
+ plist=list()
+ for ( i in 1:nrow(Sample_path_list)) {
+
+ #CR_path=file.path(Sample_path,Sample_path_list[i,]$GATK_ID)
+ Tumor_RD_path= Sample_path_list[i,]%>%.$Path
+ Sample_name=Sample_path_list[i,]$Sample_ID
+ test=GATK_Chrom_Gene_RD(gene_chorom,Tumor_RD_path,Main=paste0(Sample_name))
+ pp=karyoploteR::getDefaultPlotParams(plot.type=5)
+ pp$data1height=100
+ pp$data2height=100
+ pp$ideogramheight=0
+ pp$topmargin=10
+ 
+ nchr=test[[1]]
+ df=test[[2]]
+ mean_RD_1=test[[3]]
+ if (mean_RD_1>4){
+     mean_RD=4
+     
+   }else{
+     mean_RD=mean_RD_1
+}
+ 
+ s1=test[[4]]
+ detail.region=test[[5]]
+ Start=test[[6]]
+ End=test[[7]]
+ Gene_RD=test[[8]]
+ Main=Sample_name
+ 
+# gene_chorom=gene_chorom%>%mutate(Start_pos=ifelse(start))
+
+ p1=ggplotify::as.ggplot(expression(kp <- karyoploteR::plotKaryotype(genome="hg38",chromosomes=nchr,plot.type = 5,main=Main),
+     karyoploteR::kpPlotRegions(kp,data=df, col="#F30943", border="#F30943", r0=0, r1=mean_RD/2), karyoploteR::kpAbline(kp,h=0.5, col="green"),
+     karyoploteR::kpAbline(kp,h=0.25, col="black"),  CopyNumberPlots::plotLRR(kp,s1,lrr.column ="rdr",r0=0, r1=1,labels ="Read depth ratio",  ymin=0, ymax=2,add.axis=T, axis.cex=1,label.cex=1, points.cex = 0.5)))
+# karyoploteR::kpText(kp,chr=test[1],x=gene_chorom$end, y=mean_RD/2, labels=gene_chorom$symbol),
+
+ edb=EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86
+ library(ensembldb)
+ chr=gsub("chr","" ,nchr)
+
+ grf =GRangesFilter(GenomicRanges::GRanges(chr, ranges =IRanges:: IRanges(Gene_RD$start,Gene_RD$end)), type = "any")
+
+# gtf=GenomicRanges::GRanges(chr, ranges =IRanges:: IRanges(Gene_RD$start,Gene_RD$end))
+    ## Query genes:
+ gn <- genes(edb, filter = grf)
+
+ 
+ Genelist=gn%>%as.data.frame() %>%dplyr::filter(!grepl("RP11",symbol ))%>%dplyr::filter(gene_biotype=="protein_coding")%>%mutate(N_row=row_number())
+ if (nrow(Genelist)>1){
+  Genelist=Genelist%>%mutate(Mean_pos=start+((end-start)/2))%>%mutate(Y_position=ifelse(N_row%% 2==0,0.17,0.08))}else{
+    Genelist=Genelist%>%mutate(Mean_pos=start+((end-start)/2))%>%mutate(Y_position=0.17)
+    
+  }
+ 
+ colnames(Genelist)[1:3]=c("chr","start","end")
+ Genelist$chr=paste0("chr", Genelist$chr)
+ Genelist_range=data.frame(chr=nchr,start=min(Genelist$start),end=max(Genelist$end))
+ detail.region=regioneR::toGRanges(Genelist_range,Main,genome="hg38")
+ #detail.region <-  regioneR::toGRanges(Gene_chorom_2,Gene_RD,Main,genome="hg38")
+ Start=min(Genelist$start)
+ 
+ End=max(Genelist$end)
+ 
+ detail.regions=regioneR::toGRanges(Genelist,genome="hg38")
+ 
+ p2=ggplotify::as.ggplot(expression(kp2 <- karyoploteR::plotKaryotype(genome="hg38",chromosomes=nchr,zoom=detail.region,plot.params = pp,plot.type = 3,labels.plotter=NULL)%>% 
+    karyoploteR::kpAbline( h=0.5, col="green",data.panel = 1)%>%karyoploteR::kpAbline( h=mean_RD/2, col="black",data.panel = 1)%>%
+    karyoploteR::kpText( chr=nchr, x=(End-Start)/2, y=(mean_RD/2)+0.2, labels=as.character(mean_RD), data.panel = 1,cex=0.)%>%
+    karyoploteR::kpText(chr=nchr, x=Start+(End-Start)/2, y=(mean_RD/2)+0.1, labels=paste0(gene_chorom$symbol,"_RDR:"  ,as.character(round(mean_RD_1,2))), data.panel = 1,cex=0.8)%>%
+      karyoploteR::kpPlotRegions(data= detail.regions, col="#F30943", border="#F30943", r0=0.1, r1=0.15,data.panel =2)%>%
+      karyoploteR::kpText(chr=nchr,x=Genelist$Mean_pos,y=Genelist$Y_position,labels=Genelist$symbol,data.panel = 2,cex=0.3)%>%
+    CopyNumberPlots::plotLRR(s1, lrr.column ="rdr",r0=0, r1=1,labels ="Read depth ratio", ymin=0, ymax=2,add.axis=T, axis.cex=1,label.cex=1, points.cex =1,data.panel = 1)))
+
+
+
+
+
+plot_row=cowplot::plot_grid(plist[[1]],plist[[2]],nrow=1)
+
+title <- cowplot::ggdraw() + 
+  draw_label(
+    gene_chorom$symbol,
+    fontface = 'bold',
+    x = 0,
+    hjust = 0
+  ) +
+  theme(
+    # add margin on the left of the drawing canvas,
+    # so title is aligned with left edge of first plot
+    plot.margin = margin(0, 0, 0, 7)
+  )
+out=plot_grid(
+  title, plot_row,
+  ncol = 1,
+  # rel_heights values control vertical title margins
+  rel_heights = c(0.1, 1) )
+  
+ggsave(plot = out,
+        filename =file.path(output_dir,paste0(Sample_name,"_",gene_chorom$symbol,".pdf")),
+       device = "pdf",
+       width = 14,height=8,
+       units = "in",
+       dpi = 300)
+
+}
+
+```
+```
+
+
+```{r}
+MTAP_CNV=Data_update_10_refine%>%dplyr::filter(grepl("MTAP",Gene_list))
+CDKN2A_CNV=Data_update_10_refine%>%dplyr::filter(grepl("CDKN2A,",Gene_list))
+```
+
+
+
+# Germline CNV 
+```{r,include=F}
+Germline_CNV_ALT=Germline_CNV%>%mutate(Sample=gsub("_segments.tsv","" ,Filename))%>%mutate(CN_name=ifelse(grepl("NF1",Gene_list),"NF1" ,gsub(",.*","" ,Gene_list)))%>%mutate(CN_define=ifelse(CN==1,"microdeletion",ifelse(CN==0,"Homo_deletion",ifelse(CN==3,"Trisomy",ifelse(CN=4,"Tetrasomey",CN))))) %>%   mutate(name=paste0(CN_name,"_",CN_define))%>%.[,c("Sample","Chromosome","Start","End","ALT","CN","Gene_list","name" )]
+colnames(Germline_CNV_ALT)=c("sample","chr","start","end","alt","cn","genelist","name")
+
+```
+
+
+```{r,include=T}
+if (nrow(Germline_CNV_ALT)>0) {
+ knitr::kable(Germline_CNV_ALT,caption = "Germline structure variant",longtable = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra:: column_spec(7, width = "3cm")%>%kableExtra:: column_spec(1, width = "1.5cm")
+} else {
+  print("No germline CNV was found")
+  
+} 
+
+```
+
+```{r}
+Somatic_seg=Somatic_CNV[[Sample_name]]%>%Gene_annotation_for_CNV_2(.)
+```
+
+## Step1:  Define normal CN AND calcuate RDR bias 
+
+```{r,include=T}
+if (max(Somatic_seg$RDR)>3) {
+  
+  Data_filter=Somatic_seg%>%dplyr::filter(RDR<3)
+  Outlier=Somatic_seg%>%dplyr::filter(RDR>=3)%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%mutate(Length=End-Start)
+  knitr::kable(Outlier,caption = "Seg with RDR >2.5")%>%kableExtra::kable_styling(latex_options = c("scale_down")  )%>%kableExtra:: column_spec(2,9, width = "3cm")
+
+} else{
+  
+  Data_filter=Somatic_seg
+}
+
+```
+
+
+
+```{r,include=F,eval=F}
+
+# Kmeans=kmeans(Data_filter[,c("RDR","BAF")],centers=10,nstart=30,algorithm ="MacQueen" )
+# Kmeans_anno=Kmeans[[1]]%>%as.data.frame()%>%setNames(c("Cluster") )%>%mutate(RowID=rownames(.))
+# Kmeans_cluster=Kmeans[[2]]%>%as.data.frame() %>%arrange(RDR)%>%mutate(Cluster=as.integer(rownames(.)))%>%mutate(CNV=ifelse(RDR>0.8&RDR<1.1&BAF>0.45,"Normal",ifelse(RDR<0.5&(BAF>0.45|BAF<0.1),"Homo_loss","Other" )))
+# # set normal RDR manually
+# Normal_Chr=Kmeans_cluster%>%dplyr::filter(RDR>0.85&BAF>0.45&RDR>0.85&RDR<1)
+# RDR_bias=Normal_Chr$RDR%>%round(.,2)
+# Data_Kmeans_anno=Data_filter%>%mutate(RowID=rownames(.))%>%left_join(.,Kmeans_anno)%>%mutate(Type=ifelse((BAF==0|BAF>0.45)&RDR<0.7,"Homo_loss","Other"))
+# Kmeans_cluster_normal=Kmeans_cluster%>%dplyr::filter(CNV=="Normal")
+# knitr::kable(Kmeans_cluster_normal,caption ="Normal CNV defination")%>%kableExtra::kable_styling(latex_options = c("scale_down","hold_position") )
+# ggplot(Data_Kmeans_anno, aes(x=BAF, y=RDR,color=as.character(Cluster))) + geom_point(size=3)+ylim(c(0,3)) +ggtitle("Raw_RDR_BAF")
+```
+
+# Tumor copy number balance checking
+```{r,include=T,message=F}
+# Tumor clonality based on clustering
+#Kmenas for clustering seg data after removing germline CNV**
+#Read depth data from GATK**
+#Define gain and loss by Kmeans**
+#Tumor_purity: "1-RDR_homo_deletion/Bias" **
+#Ploidy: "1/Normal_RDR; RDR_bias=Normal_RDR"**
+create_bins <- function(start, end, bin_size) {
+  seq(from = start, to = end, by = bin_size)
+}
+
+
+
+Data_fileter_bin=Data_filter[,c("Chromosome","Start","End","RDR","BAF")]%>%
+  mutate(bin_starts = purrr::map2(Start, End, ~create_bins(.x, .y, 50000))) %>%
+  tidyr::unnest(bin_starts) %>%
+  mutate(bin_ends = pmin(bin_starts + 9999, End))
+
+Out_all=density_with_hdi (Data_fileter_bin$RDR,bandwidth = 0.03, credMass = 0.9)
+Max_out_all=Out_all[[2]]%>%dplyr::filter(Y==max(Y))
+if (Max_out_all$Value>0.95 & Max_out_all$Value<1.05) {
+  Max_out=Max_out_all
+  Bias_range=c(Max_out$min_value,Max_out$max_value)
+} else {
+  
+  Data_fileter_bin_filter=Data_fileter_bin%>%dplyr::filter(RDR>0.7&RDR<1.35)
+  #Bandwidth_RDR=
+ Out=density_with_hdi (Data_fileter_bin_filter$RDR,bandwidth = 0.03, credMass = 0.9)
+
+ # if the main peak is not located around 1, that means read depth has bias.
+ Max_out=Out[[2]]%>%dplyr::filter(Y==max(Y))
+
+ Bias_range=c(Max_out$min_value,Max_out$max_value)
+}
+
+
+
+
+
+print(paste0("peak:",Max_out$Value))
+```
+
+
+```{r,fig.width=16,fig.height=18,include=T}
+
+if (config$tumor_type == "PDX"|grepl("PDX",Sample_name)) {
+  Genomic_settings <- config$genomic_settings$PDX
+} else {
+  Genomic_settings <- config$genomic_settings$tumor
+}
+ 
+
+ Cluster_number=config$Cluster_number
+if (Max_out$Value<0.95) {
+ print ("bias")
+ UMAP_data=Data_filter[,c("RDR","BAF")] 
+# Need adjust cluster number in yml based on the variety of data.
+ 
+# Determine settings based on tumor type
+
+ P1=generate_umap_plots(Data_filter,UMAP_data, n_cluster = Cluster_number, seed = 123456)
+ 
+ Normal_cluster=P1$summary_table%>%dplyr::filter(BAF>0.45&RDR<0.95&RDR>Bias_range[1])%>%mutate(Diff=abs(RDR-1))%>%arrange(Diff)%>%.$Cluster%>%.[1]
+ if (! is.na(Normal_cluster)) {
+   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster)
+   cowplot::plot_grid(P1$UMAP_plot_list,P2$UMAP_plot_list,ncol=1)
+ }  else {
+   
+   print("no normal cluster was found, please change the kmeans cluster number in your yml file ")
+   knitr::knit_exit()
+   
+ }
+   
+}  else if (Max_out$Value>1.05) {
+ print ("bias")
+ UMAP_data=Data_filter[,c("RDR","BAF")] 
+# Need adjust cluster number in yml based on the variety of data.
+ P1=generate_umap_plots(Data_filter,UMAP_data, n_cluster = Cluster_number, seed = 123456)
+ 
+ Normal_cluster=P1$summary_table%>%dplyr::filter(BAF>0.45&RDR>1&RDR<Bias_range[2])%>%mutate(Diff=abs(RDR-1))%>%arrange(Diff)%>%.$Cluster%>%.[1]
+ if (! is.na(Normal_cluster)) {
+   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster)
+   cowplot::plot_grid(P1$UMAP_plot_list,P2$UMAP_plot_list,ncol=1)
+ }  else {
+   
+   print("no normal cluster was found, please change the kmeans cluster number in your yml file ")
+   knitr::knit_exit()
+   
+ }
+   
+   
+ 
+
+
+} 
+```
+
+## Clonality defniation by UMAP-based kmeans 
+
+```{r}
+#setting
+Type_color=RColorBrewer::brewer.pal(9,"Set1")[1:6]
+names(Type_color)=factor(c("Homo_loss","Het_loss","Normal","Trisomy","Tetrasomy","Other"),levels= c("Homo_loss","Het_loss","Normal","Trisomy","Tetrasomy","Other"))
+CN_label=data.frame(Type=c("Homo_loss","Het_loss","Normal" ,"Trisomy" , "Tetrasomy"),CN=c(0,1:4))
+CNV_colors <-RColorBrewer::brewer.pal(9,"Paired")
+names(CNV_colors)=c("Normal","LOH" , "Trisomy","Trisomy_Tetrasomy_mix" ,"High_level_ampli", "Tetrasomy", "Tetrasomy_LOH" ,"Homo_loss" ,"Het_loss" )
+
+
+normal_setting <- Genomic_settings$normal
+LOH_setting <- Genomic_settings$LOH
+trisomy_setting <- Genomic_settings$trisomy
+tetrasomy_setting <- Genomic_settings$tetrasomy
+tetrasomy_LOH_setting <- Genomic_settings$tetrasomy_LOH
+het_loss_setting <- Genomic_settings$het_loss
+homo_loss_setting <- Genomic_settings$homo_loss
+
+
+```
+
+```{r}
+# tumor_purity <- seq(0.2, 1, by = 0.1)
+# 
+# # Calculate RDR for trisomy
+# RDR_trisomy <- 1 + tumor_purity / 2
+# 
+# # Calculate BAF for trisomy assuming AAB scenario
+# BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
+# 
+# # Create a data frame to store these values
+# Trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
+# trisomy_model <- lm(BAF ~ RDR, data = Trisomy_data)
+#Trisomy purity (0.3-0.9, RDR 1.1~1.45, BAF 0.35 0.47)
+
+Trisomy_model_predict <- function(model, RDR, BAF, threshold=0.5) {
+  
+    # Validate model input
+    if (missing(model) || !inherits(model, "lm")) {
+        stop("Please provide a valid linear model.")
+    }
+    
+    # Create a new data frame for the specific point
+    specific_point <- data.frame(RDR = RDR)
+    
+    # Predict the BAF for this specific RDR using the model
+    predicted_BAF <- predict(model, newdata = specific_point)
+    
+    # Calculate the residual (difference between actual and predicted BAF)
+    residual <- BAF - predicted_BAF
+    
+    # Determine if the point is close to the line based on the threshold
+    is_close <- abs(residual) <= threshold
+    
+    # Output the result along with some informative data
+    list(
+        Predicted_BAF = predicted_BAF,
+        Actual_BAF = BAF,
+        Residual = residual,
+        Is_Close_To_Line = is_close,
+        Message = if (is_close) "The point is close to the regression line." else "The point is not close to the regression line."
+    )
+}
+```
+
+
+```{r}
+# trisomy_data <- data.frame(
+#   Tumor_Purity = seq(0.4, 0.9, by = 0.1),
+#   RDR = 1 + seq(0.4, 0.9, by = 0.1) / 2,
+#   BAF = 0.33 * seq(0.4, 0.9, by = 0.1) + 0.5 * (1 - seq(0.4, 0.9, by = 0.1))
+# )
+# trisomy_model <- lm(BAF ~ RDR, data = trisomy_data)
+tumor_purity <- seq(0.2, 0.9, by = 0.1)
+LOH_per <- seq(0, 1, by = 0.2)
+LOH_type <- c("Gain", "Loss")
+Tetrasomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR =1+tumor_purity , BAF = 0.5)
+
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Tetrasomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for Tetrasomy
+Tetrasomy_LOH_data$RDR <- 1+Tetrasomy_LOH_data$Tumor_Purity
+
+Tetrasomy_LOH_data2 <- Tetrasomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Loss" ~ 0.5 * (1 - Tumor_Purity*LOH_purity) + 0.25 *  (Tumor_Purity*LOH_purity) ,
+    LOH_type == "Gain" ~ 0.5 * (1 - Tumor_Purity*LOH_purity) + 1 *  (Tumor_Purity*LOH_purity) ,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%mutate(BAF=ifelse(BAF>0.5,1-BAF,BAF))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+
+Tetrasomy_LOH_data_line_model=Tetrasomy_LOH_data2%>%dplyr::filter(LOH_per==1)%>%dplyr::filter(LOH_type=="Gain")
+Tetrasomy_LOH_model <- lm(BAF ~ RDR, data = Tetrasomy_LOH_data_line_model)
+
+
+
+if (Max_out$Value<0.95 | Max_out$Value>1.05) {
+ df=P2[[2]]
+} else {
+  df=Data_filter%>%mutate(Norm_RDR=RDR)
+  
+}
+
+
+Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.45&BAF>0.3&BAF<0.5)
+
+if (grepl("PDX",Sample_name)){
+  trisomy_data <- data.frame(
+  Tumor_Purity = seq(0.4, 1, by = 0.1),
+  RDR = 1 + seq(0.4, 1, by = 0.1) / 2,
+  BAF = 0.33 * seq(0.4, 1, by = 0.1) + 0.5 * (1 - seq(0.4,1, by = 0.1))
+)
+
+ Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.5&BAF>0.3&BAF<0.5)
+  
+}
+
+
+if (nrow(Data_select)>0) {
+ results <- Data_select%>%.[,c("Chromosome","Start", "End","BAF","Norm_RDR")]%>%dplyr::rename(RDR=Norm_RDR) %>%
+   rowwise() %>%
+   mutate(
+    Analysis = list(Trisomy_model_predict(Tetrasomy_LOH_model, RDR, BAF, threshold = 0.03))
+  )%>%ungroup() %>%  # Optionally remove old columns if you only want the results
+  tidyr::unnest_wider(col = Analysis)%>%arrange(RDR)
+
+ Data_select_2=Data_select%>%left_join(.,results[,c(1,2,3,9)])%>%mutate(CNV=ifelse(Is_Close_To_Line==T|BAF>0.45,"Tetrasomy","Other"))
+ G1=ggplot(Data_select_2,aes(x=BAF,y=Norm_RDR,color=factor(Is_Close_To_Line)))+geom_point()+geom_point(data=Tetrasomy_LOH_data_line_model,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+  coef_intercept <- coef(Tetrasomy_LOH_model)[1]
+   coef_slope <- coef(Tetrasomy_LOH_model)[2]
+  # Adding line calculation to results
+   # Data_select_3 <- Data_select_2 %>%
+   #    mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
+   #     mutate(CNV2=ifelse(BAF < Line_BAF,"Trisomy",CNV) )%>%dplyr::select(-Line_BAF) # Select points where BAF is less than the calculated
+   Data_select_3 <- Data_select_2%>% dplyr::filter(CNV=="Other")%>%
+       mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
+        mutate(CNV=ifelse(BAF < Line_BAF,"Trisomy","Tetrasomy") )%>%dplyr::select(-Line_BAF)
+   Data_select_2_rm=Data_select_2%>% dplyr::filter(CNV!="Other")
+    Data_select_4=rbind(Data_select_2_rm,Data_select_3)%>%dplyr::rename(CNV2=CNV)
+   
+   G2=ggplot(Data_select_4 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=Tetrasomy_LOH_data_line_model,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+   
+   categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_4[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV3 =ifelse(!is.na(CNV2), CNV2, as.character(CNV)))%>%mutate(CNV3=ifelse(is.na(CNV3),CNV,CNV3))%>%dplyr::select(-CNV)%>%dplyr::rename(CNV=CNV3)
+
+} else {
+  categorized_data<- categorize_CNV(df)
+}
+```
+
+
+```{r,include=T,fig.width=10,fig.height=6}
+if (nrow(Data_select)>0) {
+cowplot::plot_grid(G1,G2)
+}
+```
+
+
+
+```{r,fig.width=6,fig.height=6,include=T}
+
+out=categorized_data%>%dplyr::filter(CNV=="Unclassified")
+
+P5 =ggplot(categorized_data, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3)+scale_color_manual(values=CNV_colors) +ggtitle("Cluster_CNV2")
+P5
+
+```
+
+
+```{r}
+All_Sub_p=calculate_subclone_purities(categorized_data)
+```
+\newpage
+
+## Clonality from LOH and Trisomy and Hetloss
+```{r,include=T,fig.height=3,fig.width=6}
+No_normal_data <-All_Sub_p%>%dplyr::filter(CNV!="Normal")
+
+if (nrow(No_normal_data ) <15) {
+  Select_data =No_normal_data
+  data=Select_data$Subclone_p%>%sort()
+# Example usage
+ set.seed(12345)
+ Bandwidth=Genomic_settings$bandwidth_1
+ print(Bandwidth)
+ result <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9)
+result[[2]]
+Clonaity_define=result[[2]]%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))%>%dplyr::filter(Value<0.9)
+  
+}
+```
+
+
+```{r,include=T,fig.height=3,fig.width=12}
+if (nrow(No_normal_data) >15) {
+
+ Select_data <-All_Sub_p %>%dplyr::filter(CNV %in%c("LOH","Hetloss","Trisomy"))
+ data=Select_data$Subclone_p%>%sort()
+# Example usage
+set.seed(12345)
+Bandwidth=Genomic_settings$bandwidth_1
+
+result <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9)
+#result[[2]]
+Data=All_Sub_p %>%dplyr::filter(!CNV %in%c("LOH","Hetloss","Trisomy")) %>%dplyr::filter(!is.na(Subclone_p))%>%dplyr::filter(Subclone_p<0.9)
+out=group_numbers_with_clonality(Data$Subclone_p,result[[2]], threshold=0.1) 
+grouped_other_df= Data%>%as.data.frame()%>%mutate(Group=out)
+Other=grouped_other_df%>%dplyr::filter(Group=="other")
+if(nrow(Other)>0) {
+  
+  data=Other$Subclone_p%>%na.omit()
+  Group_number=grouped_other_df$Group%>%sort()%>%as.integer()%>%na.omit()%>%max()+1
+
+  Bandwidth=Genomic_settings$bandwidth_2
+  print(Bandwidth)
+  result_other <- density_with_hdi(data, bandwidth = Bandwidth, credMass = 0.9,initial_group_number= Group_number)
+ 
+ #result_other[[2]]
+  if (!grepl("PDX",Sample_name)){
+     Clonaity_define=rbind(result[[2]],result_other[[2]])%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))%>%dplyr::filter(Value<0.9)
+  } else {
+    Clonaity_define=rbind(result[[2]],result_other[[2]])%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))
+  
+  } 
+}
+ else {
+   Clonaity_define=result[[2]]%>%arrange(desc(Value))%>%mutate(Group=as.character(c(1:nrow(.))))
+   
+ }
+
+}
+
+ 
+```
+
+
+```{r}
+# need to update
+High_ampli_cal_CN = function(RDR, TP_list, CN_range) {
+  output = data.frame()
+
+  for (i in TP_list) {
+    Normal_CN = (1 - i) * 2
+    row = data.frame(TP = i)
+
+    for (CN in CN_range) {
+      CP = i * CN
+      RDR_value = (Normal_CN + CP) / 2
+      row[paste0("CN", CN, "_RDR")] = RDR_value
+    }
+
+    output = rbind(output, row)
+  }
+  output2=output%>%as.data.frame()%>%mutate(RDR_value=RDR)
+
+  # Initialize variables to store the closest values
+  closest_value = Inf
+  closest_TP = NA
+  closest_CN = NA
+  diff_list=list()
+  # Iterate through the output to find the closest value to RDR
+  for (row in 1:nrow(output)) {
+    for (CN in CN_range) {
+      diff = abs(output[row, paste0("CN", CN, "_RDR")] - RDR)
+      if (diff < closest_value) {
+        closest_value = diff
+        closest_TP = output$TP[row]
+        closest_CN = CN
+      }
+
+
+    }
+  }
+
+  # Create the final output table with the closest TP and CN
+  final_output = data.frame(Value = closest_TP, CN = closest_CN, RDR_diff = closest_value)%>%mutate(CN=ifelse(RDR_diff<0.25,CN,NA))
+
+  return(final_output)
+}
+
+
+```
+
+```{r}
+# High level application defination
+Data=All_Sub_p$Subclone_p
+out <- group_numbers_with_clonality(Data,Clonaity_define, threshold=0.15)
+# High level ampli defination
+Data_update_9=All_Sub_p%>%as.data.frame()%>%mutate(Group=out)%>%left_join(.,Clonaity_define)%>%mutate(Group2=paste0("Clonal_",Group))%>%mutate(Group2=ifelse(CNV=="Normal","Normal",Group2))%>%mutate(CNV=ifelse(CNV=="Unclassified"&Norm_RDR>1.9,"High_level_ampli",CNV))
+
+
+High_ampli_data=Data_update_9%>%dplyr::filter(CNV=="High_level_ampli")
+
+# for the High level amplication with 6, 8, 10
+High_ampli_data_baf_0.5=High_ampli_data%>%dplyr::filter(BAF>0.4)
+if(nrow(High_ampli_data_baf_0.5) >0){
+ Test=sapply(High_ampli_data_baf_0.5$Norm_RDR,function(x) out=unlist(High_ampli_cal_CN(x,Clonaity_define$Value,CN_range=c(6,8,10))))%>%t()%>%as.data.frame()%>%left_join(.,Clonaity_define)
+
+ High_ampli_data2=High_ampli_data_baf_0.5%>%mutate(CN=Test$CN,Group2=Test$Group,Value=Test$Value,Group=Test$Group)
+
+ High_ampli_data_baf_other=High_ampli_data%>%dplyr::filter(BAF<=0.45)%>%mutate(CN=">4",Group2="High_level_ampli")
+
+ High_ampli_combine=rbind(High_ampli_data_baf_other,High_ampli_data2)
+} else {
+   High_ampli_combine=High_ampli_data%>%mutate(CN=">4",Group2="High_level_ampli")
+  
+}
+#%>%left_join(.,Clonaity_define)
+
+No_high=Data_update_9%>%dplyr::filter(CNV!="High_level_ampli")%>%mutate(Value=ifelse(is.na(Value),Subclone_p,Value)) %>%
+    mutate(CN = case_when(
+      CNV == "LOH" ~ 2,
+      grepl("Tetrasomy",CNV) ~ 4,
+       grepl("Trisomy",CNV)  ~ 3,
+      CNV == "Het_loss" ~ 1,
+      CNV == "Homo_loss" ~ 0,
+      CNV == "Normal" ~ 2,
+      TRUE ~ NA_real_  # In case CNV doesn't match any condition
+    ))
+
+# correct NF1 information 
+Data_update_10=rbind(High_ampli_combine,No_high)%>%mutate(Group2=paste0(Group,":",round(Value,2)))%>%mutate(Group2=ifelse(CNV=="Normal","Normal",ifelse(Group2=="other:1","other:NA", Group2))) %>%arrange(Chromosome,Start)
+
+Data_update_10%>%dplyr::filter(Group2=="other:NA")
+```
+
+
+```{r}
+# if (grepl("NF1",Germline_CNV_ALT$genelist)){
+#   print("true")
+#   Data_update_11=Data_update_10%>%mutate(CNV=ifelse(grepl(",NF1,",Gene_list),"Germ_loss",CNV))%>%mutate(CN=ifelse(grepl(",NF1,",Gene_list),1,CN))%>%mutate(Group2=ifelse(grepl(",NF1,",Gene_list),"Germline_Variant",Group2))
+#   
+# }
+```
+
+
+```{r,include=F}
+P11 =ggplot(Data_update_10, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3)+scale_color_manual(values=CNV_colors) +ggtitle("Clonal")+facet_wrap(~Group2)
+```
+
+
+```{r,fig.width=12,fig.height=18,include=T}
+P11
+```
+
+
+
+\newpage
+
+```{r,fig.width=24,fig.height=6,include=T}
+Somatic_seg_BAF_plot_2(Data_update_10)
+
+```
+```{r,fig.width=24,fig.height=6,include=T}
+Somatic_seg_Raw_RDR_plot_2 (Data_update_10)
+```
+
+
+```{r,fig.width=24,fig.height=6,include=T}
+Somatic_seg_Norm_RDR_plot_2(Data_update_10)
+```
+
+```{r,fig.width=24,fig.height=6,include=T}
+# Example usage (assuming Somatic_SV and Germline_SV data frames are properly defined):
+
+Germline_CNV_ALT_unique=Germline_CNV_ALT%>%distinct(name,.keep_all = T)
+
+Data_update_10_refine=Data_update_10%>%dplyr::filter(!grepl(">4",as.character(CN)))%>%mutate(CN=as.numeric(CN))%>%dplyr::filter(CN<6.1)%>%mutate(CN=ifelse(Value<0.15&!is.na(Value),2,CN))%>%
+  mutate(Group2=ifelse(Value<0.15,"Normal",Group2))%>%
+  mutate(Value=ifelse(Value<0.15&!is.na(Value),1,Value))
+
+MAX_cn=max(Data_update_10_refine$CN)
+ 
+
+Somatic_CN_plot_2(Data_update_10_refine,Germline_SV =Germline_CNV_ALT_unique,MAX_CN =MAX_cn,Title=paste0("Somatic CNV plot"," Clone_proportion>0.15" ))
+```
+
+\newpage
+
+## High level amplication 
+```{r,include=T}
+High_ami=Data_update_10%>%dplyr::filter(CNV=="High_level_ampli")%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%arrange(Chromosome,Start)
+knitr::kable(High_ami,caption = "High amplication",longtable = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra:: column_spec(2, width = "3cm")
+```
+
+\newpage
+```{r,include=T}
+NF1=Data_update_10%>%dplyr::filter(grepl(",NF1,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+if (NF1$CN!=2) {
+knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")}
+
+```
+```{r,include=T}
+CDKN2A=Data_update_10%>%dplyr::filter(grepl(",CDKN2A,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+
+if (CDKN2A$CN!=2) {
+knitr::kable(CDKN2A,caption = "CDKN2A somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
+}
+
+```
+
+## Het and homoloss
+ 
+```{r,include=F}
+Loss=Data_update_10%>%dplyr::filter(grepl("loss", CNV) )%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))%>%arrange(Chromosome,Start)
+knitr::kable(Loss,caption = "Loss",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "3cm")
+
+```
+
+\newpage 
+
+# Config setting for this sample
+```{r,include=T}
+if (config$tumor_type == "PDX"|grepl("PDX",Sample_name)) {
+ print(config$genomic_settings$PDX) 
+} else {
+  print(config$genomic_settings$tumor ) 
+  
+  }
+```
+
+
+```{r}
+dir.create(file.path(Process_path,PT_ID))
+save(Data_update_10,Data_update_10_refine,file=file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
+```
+```{r,eval=F}
+output_file <- paste0(config$PT_ID, "_", config$Sample_input, "_CNV.pdf")
+output_dir <- file.path(base_output_dir, config$PT_ID)
+
+# Render the RMarkdown file with custom output settings
+rmarkdown::render(
+  input = "1_step2_CNV.Rmd",
+  output_file = output_file,
+  output_dir = output_dir)
+```
+
+
+```{r}
+knitr::knit_exit()
+```
+
+
