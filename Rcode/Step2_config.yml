@@ -5,6 +5,7 @@ default:
   Sample_input: 2
   tumor_type: "Tumor" # " PDX" or  "Tumor"
   Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
+  PW_path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Rscript/Synapse_pd.txt"
   Email: "lyu.yang@wustl.edu"
   Reference_path: "/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
   base_output_dir: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Report"

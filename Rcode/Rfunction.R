@@ -1566,7 +1566,7 @@ plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene
       summarise(start=min(start),end=max(end))%>%arrange(start)%>% mutate(chr=unique(RD_raw_data$chr))%>%na.omit()%>%mutate(row_n=1:nrow(.))%>% mutate(y=ifelse(row_n%%2,0.8,0.6))
   }
  
- 
+  
   # Call the GATK_Chrom_Gene_RD_2 function to get the necessary data
   colnames(RD_raw_data)=tolower(colnames(RD_raw_data))
   Tumor_bbc_reform=RD_raw_data[,c("chr","start","end","rdr")]
@@ -1642,7 +1642,7 @@ plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene
 
 
       kpPlotRegions(kp, data = segment_data, col = "blue", r0 = 0.9, r1 =1, border = "#F30943",data.panel = 2)
-      kpText(kp, chr = Data$chr, x =Data$start,y = Data$y, labels =as.character(Data$gene_name), cex = 0.8,data.panel = 2)
+      kpText(kp, chr = Data$chr, x =Data$start+(Data$end-Data$start)/2,y = Data$y, labels =as.character(Data$gene_name), cex = 0.8,data.panel = 2)
       # Add text for each segment showing the mean RDR
       # if (!is.null(Gene_chorom)&(isTRUE(plot_zoom)  )) {
       #    kpText(kp, chr = segments$chr[i], x = (segments$start[i] + segments$end[i]) / 2,

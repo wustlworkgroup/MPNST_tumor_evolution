@@ -1,6 +1,6 @@
 ---
 title: "`r paste0(config::get(file = 'Step2_config.yml')$PT_ID, '_CNV_analysis')`"
-author: "`r config::get(file = 'Step1_config.yml')$document$author`"
+author: "`r config::get(file = 'Step2_config.yml')$document$author`"
 date: "`r Sys.Date()`"
 output:
   pdf_document:
@@ -16,7 +16,9 @@ knit: (
     
     pSubTitle <- paste0(config$PT_ID,"_",config$Sample_input,"_CNV.pdf")
     
-    DIR=file.path(config$base_output_dir, config$PT_ID)
+    base_output_dir=file.path(config$Path,"Report")
+    
+    DIR=file.path(base_output_dir, config$PT_ID)
     
     rmarkdown::render( 
       input       = inputFile, 
@@ -37,10 +39,18 @@ knitr::opts_chunk$set(echo = F,warnings =F, message=F,include=F)
 options(knitr.table.format = 'markdown',encoding = 'UTF-8',warnings =F, message=F ) 
 # Check and create output directory if it doesn't exist
 config <- config::get(file = 'Step2_config.yml')
-output_dir <- file.path(config$base_output_dir, config$PT_ID)
+Path <- config$Path
+base_output_dir=file.path(Path,"Report")
+output_dir <- file.path(base_output_dir, config$PT_ID)
 if (!dir.exists(output_dir)) {
   dir.create(output_dir, recursive = TRUE)
 }
+
+```
+
+```{r}
+
+source(file.path(getwd(),"Rfunction.R"))
 
 ```
 
@@ -53,10 +63,10 @@ library(ggplot2)
 
 ```{r,include=F}
 PT_ID <- config$PT_ID
-Path <- config$Path
+
 Email <- config$Email
 Reference_path <- config$Reference_path
-Sample_input=config$Sample_input
+Sample_input=config$Sample_input%>%as.integer()
 Rcode_path=file.path(Path,"Rcode",PT_ID)
 Rdata_path=file.path(Path,"Rdata",PT_ID )
 Rawdata_path=file.path(Path,"Rawdata",PT_ID)
@@ -65,6 +75,17 @@ Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
 Reference_path="/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
 ```
 
+```{r}
+
+base_output_dir=file.path(Path,"Report")
+output_dir <- file.path(base_output_dir, config$PT_ID)
+pSubTitle <- paste0(PT_ID,"_",Sample_input,"_CNV.pdf")
+output_file=file.path(output_dir,pSubTitle )
+
+if (file.exists( output_file)) {
+  quit()
+}
+```
 
 
 ```{r,include=F}
@@ -82,6 +103,10 @@ load("/Volumes/lyu.yang/MAC_1/R/Public_database/Reference/Chrosmome_cytobank.rda
 # The data from step1
 dir(Process_path)
 load(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+
+cgwtools::lsdata(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))
+
+ 
 ```
 
 ```{r}
@@ -94,6 +119,25 @@ Sample_name=RDR_BAF_samples[Sample_input]
 knitr::kable(Sample_name)%>%kableExtra::kable_styling()
 ```
 
+```{r}
+categorize_CNV <- function(data) {
+  data <- data %>%
+    rowwise() %>%
+    mutate(CNV = ifelse(
+      (Norm_RDR >= normal_setting$Norm_RDR[1] & Norm_RDR <= normal_setting$Norm_RDR[2]) & (BAF >= normal_setting$BAF[1] & BAF <= normal_setting$BAF[2]), "Normal",
+      ifelse((Norm_RDR >= LOH_setting$Norm_RDR[1] & Norm_RDR <= LOH_setting$Norm_RDR[2]) & (BAF >= LOH_setting$BAF[1] & BAF <= LOH_setting$BAF[2]), "LOH",
+             #ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF >= trisomy_setting$BAF[1] & BAF <= trisomy_setting$BAF[2], "Trisomy",
+             ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF<=0.3, "Trisomy", # Trisomy+LOH
+                    ifelse(Norm_RDR >= tetrasomy_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_setting$Norm_RDR[2] & BAF >= tetrasomy_setting$BAF[1] & BAF <= tetrasomy_setting$BAF[2], "Tetrasomy",
+                           ifelse(Norm_RDR >= tetrasomy_LOH_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_LOH_setting$Norm_RDR[2] & BAF >= tetrasomy_LOH_setting$BAF[1] & BAF <= tetrasomy_LOH_setting$BAF[2], "Tetrasomy_LOH",
+                                  ifelse(Norm_RDR >= het_loss_setting$Norm_RDR[1] & Norm_RDR <= het_loss_setting$Norm_RDR[2] & BAF >= het_loss_setting$BAF[1] & BAF <= het_loss_setting$BAF[2], "Het_loss",
+                                         ifelse(Norm_RDR >= homo_loss_setting$Norm_RDR[1] & Norm_RDR <= homo_loss_setting$Norm_RDR[2] & (BAF >= homo_loss_setting$BAF[2] | BAF <= homo_loss_setting$BAF[1]), "Homo_loss",
+                                                "Unclassified"))))))))
+  
+  return(data)
+}
+```
+
 
 ```{r,include=F}
 dir(Public_database_path)
@@ -104,930 +148,6 @@ dir.create(Process_path)
 # download Hg38_gene_chr_position.csv from synapse syn26376828" in your reference pathay
 
 ```
-
-
-
-###############################################################################################################
-```{r}
-library(karyoploteR)
-library(GenomicRanges)
-library(RColorBrewer)
-Gene_annotation_for_CNV=function(Data) {
-  
-  edb=EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86
-  
-  library(ensembldb)
-  #data_list=list()
-  Data$Gene_list=""
-  for (i in 1:nrow(Data)){
-    nchr=Data[i,]$Chromosome
-    
-    chr=gsub("chr","" ,nchr)
-    Start=Data[i,]$Start
-    End=Data[i,]$End
-    
-    grf =GRangesFilter(GenomicRanges::GRanges(chr, ranges =IRanges:: IRanges(Start,End)), type = "any")
-    ## Query genes:
-    gn <- genes(edb, filter = grf)
-    Genelist=gn%>%as.data.frame() %>%dplyr::filter(gene_biotype=="protein_coding") %>%.$gene_name
-    
-    #return(Genelist)
-    # return(Data[i,"Gene_list"])
-    if (length(Genelist>0)) {
-      Data[i,"Gene_list"]=toString (Genelist)
-      #data_list[[i]]=Genelist
-    }
-  }
-  
-  return(Data)
-  
-}
-
-Normal_gene_WEX_CN_2=function (WEX_germline_path) {
-  # Internal_bin=1000
-  # loading normal germline data (chr17)
- 
-  #Sample=list.files(WEX_germline_path,recursive = F) %>% .[grepl(Patient_ID,.)]
-  #File_path=file.path(WEX_germline_path,Sample)
-  seg_file=list.files(WEX_germline_path,pattern = "_segments.tsv",full.names = T) 
-  SEG_data=readr::read_tsv(seg_file,show_col_types = FALSE)%>%tidyr::separate(ID,c("Type","Chromosome","Start","End"),sep="_")
-  SEG_data$Start=as.numeric(SEG_data$Start)
-  SEG_data$End=as.numeric(SEG_data$End)
-  # ALT_seg=SEG_data%>%dplyr::filter(ALT!=".")
-  
-  Gene_name=Gene_annotation_for_CNV(SEG_data)
-  colnames( Gene_name)[grepl("NP",colnames( Gene_name))]="NP"
-  
-  Gene_name2=Gene_name%>%dplyr::filter(NP>100)
-  # fILTER BY NP
-  
-  return(Gene_name2)
-  #Interval_file=file.path(File_path,paste0(Sample,"_intervals.tsv") )  
-  #Interval_file=list.files(WEX_germline_path,pattern = "_intervals.tsv",full.names = T) 
-  
-}
-
-
-
-
-BAF_densMode <- function(Data,nclust,minBAF=0,maxBAF=0.5,title){
-  library(maftools)
-  #td <- density(Data[,"BAF"])
-  
- # maxDens <- which.max(td$y)
- # output=data.frame(x=td$x[maxDens], y=td$y[maxDens])
-#  p=ggplot(Data, aes_string(x)) + geom_density() + geom_vline(xintercept =output[[1]])+ggtitle(title) 
- 
-  Data = Data%>%dplyr::filter(BAF > minBAF&BAF < maxBAF)
- 
-  tsb.cluster = mclust::densityMclust(Data[,"BAF"], G = 1:nclust, verbose = FALSE,plot = T)
-  
-  Data$cluster = as.character(tsb.cluster$classification)
-  abs.med.dev = abs(Data[, "BAF"] - median(Data[, "BAF"]))
-  pat.mad = median(abs.med.dev) * 100
-  pat.math = pat.mad * 1.4826/median((Data[, "BAF"]))
-  Data$MATH = pat.math
-  Data$MedianAbsoluteDeviation = pat.mad     
-  # return(Data)
-  # Data = maftools:::refineClusters(clusters = Data)
-  
-  #clust.dat = rbind(clust.dat, Data, fill = TRUE)
-  
-  # clust.dat.mean = clust.dat[, mean(x), by = .(cluster)]
-  clust.dat.mean =Data%>%group_by(cluster) %>%summarise(meanBAF=mean(BAF))
-  return(clust.dat.mean)
-  
-  
-  # plot(density (DN_reads$RD))
-  # DN_reads_mean=density(DN_reads$RD)$x[which.max(density(DN_reads$RD)$y)]
-  # ggplot(DN_reads, aes(RD)) + geom_density() + geom_vline(xintercept = DN_reads_mean)
-}
-
-Tumor_purity_cal_by_BAF=function(BAF_value,Variant_type) {
-  
-  
-    TP="Not determined"
-    
- 
-  
-  if (Variant_type=="LOH") {
-    
-    #TP=(2*BAF_value)-1
-    TP=1-2*BAF_value%>%round(.,2)
-    
-  }
-  
-  if (Variant_type=="LOH+Trisomy") {
-      
-      #TP=(2*BAF_value)-1
-      TP=(1-2*BAF_value)/(BAF_value+1)%>%round(.,2)
-      
-    }
-  
-  
-  if(Variant_type=="Het_A_loss") {
-    
-    TP=2-(1/BAF_value)%>%round(2,.)
-    
-  }
-  
-  if(Variant_type=="Het_B_loss") {
-    
-    TP=(1-(2*BAF_value))/(1-BAF_value)%>%round(.,2)
-    
-  }
-  
-  # if(Variant_type=="Trisomy"){
-  #  # TP=(2*RDR)-2
-  #   TP=(1/BAF_value)-2
-  # }
-    
-    # if(Variant_type=="Trisomy"){
-    #   # B gain
-    #   TP=(2*BAF_value-1)/(2-BAF_value)%>%round(.,2)
-    # }  
-    
-    if(Variant_type=="Trisomy"){
-      # B gain
-      TP=(1/BAF_value)-2%>%round(.,2) # TP=0.5,BAF=0.4
-    }
-  
-    # if((Variant_type=="Tetrasomy")&(BAF_value<0.45)){
-    #   BAF=1-BAF_value
-    #   # B gain
-    #   TP1=(BAF-0.45)/(1-BAF)
-    #   TP2=(0.5/BAF_value)-1
-    #   TP=paste0("LOH_B:",round(TP1,2),",","LOH_A:",round(TP2,2)) 
-    #   }
-  
-  
-  
-  return(TP)
-  
-}
-
-
-Gene_annotation_for_CNV_2=function(Data) {
-  
-  edb=EnsDb.Hsapiens.v86::EnsDb.Hsapiens.v86
-  
-  library(ensembldb)
-  #data_list=list()
-  Data$Gene_list=""
-  for (i in 1:nrow(Data)){
-    nchr=Data[i,]$Chromosome
-    
-    chr=gsub("chr","" ,nchr)
-    Start=Data[i,]$Start
-    End=Data[i,]$End
-    
-    grf =GRangesFilter(GenomicRanges::GRanges(chr, ranges =IRanges:: IRanges(Start,End)), type = "any")
-    ## Query genes:
-    gn <- genes(edb, filter = grf)
-    Genelist=gn%>%as.data.frame() %>%dplyr::filter(gene_biotype=="protein_coding") %>%.$gene_name
-    
-    #return(Genelist)
-    # return(Data[i,"Gene_list"])
-    if (length(Genelist>0)) {
-      Data[i,"Gene_list"]=toString (Genelist)%>%gsub(" ","",.)
-      #data_list[[i]]=Genelist
-    }
-  }
-  
-  return(Data)
-  
-}
-
-
-
-Somatic_CN_plot=function(Somatic_SV,Germline_SV) {
-  MAX_CN=max(Somatic_SV$CN)
-  kp <- karyoploteR::plotKaryotype(genome="hg38",chromosomes =paste0("chr", 1:22),plot.type = 4 )
-  kpDataBackground(kp, data.panel = 1, col="grey90")
-  kpPlotRegions(kp,arm_q,col="white",r0 = 0, r1 =1)
-  
-  # kpDataBackground(kp)
-  #Default axis
-  
-  #Axis on the right side of the data.panel
-  kpAxis(kp, side = 1,labels = NA,numticks = 1)
-  kpAxis(kp, r1=1, ymin=0, ymax =1, numticks = MAX_CN+1, cex=2, data.panel=1,tick.len = 1,labels=c(0:MAX_CN) ) 
-  kpAbline(kp, h=c(1), col="gray10", ymin=-1, ymax=1, r0=0.5, r1=2/MAX_CN,lty=2)
-  kpAbline(kp, h=c(1), col="gray10", ymin=-1, ymax=1, r0=0.5, r1=4/MAX_CN,lty=2)
-  kpAbline(kp, h=c(1), col="gray10", ymin=-1, ymax=1, r0=0.5, r1=1/MAX_CN,lty=2)
-  kpAbline(kp, h=c(1), col="gray10", ymin=-1, ymax=1, r0=0.5, r1=3/MAX_CN,lty=2)
-  for ( i in 1:nrow(Somatic_SV)) {
-    
-    Somatic_SV_select=Somatic_SV[i,]
-    Somatic_SV_torange=Somatic_SV_select[,c("chr","start","end")]%>%toGRanges()
-    
-    kpPlotRegions(kp,Somatic_SV_torange,col=Somatic_SV_select$color,r0 =Somatic_SV_select$r0, r1 = Somatic_SV_select$r1)
-    kpText(kp, data.panel = 1,chr=Somatic_SV_select$chr, x=Somatic_SV_select$start, y=Somatic_SV_select$r1, labels=Somatic_SV_select$symbol,col=Somatic_SV_select$color, pos=1,cex=1)
-    
-  }
-  
-  for ( i in 1:nrow(Germline_SV)) {
-    
-    Germline_SV_select=Germline_SV[i,]
-    Germline_SV_torange=Germline_SV_select[,c("chr","start","end")]%>%toGRanges()
-    
-    kpPlotRegions(kp,Germline_SV_torange,col=Germline_SV_select$color,r0 =Germline_SV_select$r0, r1 = Germline_SV_select$r1)
-    kpText(kp, data.panel = 1,chr=Germline_SV_select$chr, x=Germline_SV_select$start, y=Germline_SV_select$r1, labels=Germline_SV_select$symbol,col=Germline_SV_select$color, pos=2)
-    
-  }
-}
-
-
-
-group_numbers <- function(numbers, threshold = 0.1,start_with=1) {
-  # Sort numbers to simplify grouping
-  sorted_indices <- order(numbers)
-  sorted_numbers <- numbers[sorted_indices]
-  
-  # Initialize the first group
-  group_ids <- numeric(length(sorted_numbers))
-  current_group <- start_with
-  group_ids[1] <- current_group
-  
-  for (i in 2:length(sorted_numbers)) {
-    if (sorted_numbers[i] - sorted_numbers[i - 1] < threshold) {
-      # Add to the current group if the difference is less than the threshold
-      group_ids[i] <- current_group
-    } else {
-      # Increment group number and start a new group
-      current_group <- current_group + 1
-      group_ids[i] <- current_group
-    }
-  }
-  
-  # Create a dataframe with original numbers and their group numbers
-  result <- data.frame(
-    Number = numbers,
-    Group = group_ids[order(sorted_indices)]
-  )
-  
-  return(result)
-}
-
-group_numbers_with_clonality <- function(data, clonality, threshold = 0.05) {
-  # Sort the data
-  #sorted_data <- sort(data)
-  sorted_data=data
-  # Initialize the group vector
-  groups <- numeric(length(sorted_data))
-  
-  for (i in 1:length(sorted_data)) {
-    # Find the closest group from clonality data based on the threshold
-    if(!is.na(sorted_data[i])) {
-     differences <- abs(clonality$Value - sorted_data[i])
-      min_diff <- min(differences)
-       if (min_diff < threshold) {
-       closest_group <- clonality$Group[which.min(differences)]
-       groups[i] <- closest_group
-       }  else {
-      # Assign to "other" group if no close group is found
-       groups[i] <- "other"
-      }
-     } else { groups[i] <- "other"}
-  }
-  return(as.character(groups))
-  # Create a dataframe with the original numbers and their group numbers
-  result <- data.frame(Group = groups[order(match(data, sorted_data))],
-    Value = data
-    
-  )
-  
-  return(result)
-}
-
-
-calculate_tumor_purity_by_BAF_LOH <- function(BAF_LOH) {
-  # Ensure BAF_LOH is less than 0.5 and not equal to 0
-  if (BAF_LOH >= 0.5 || BAF_LOH == 0) {
-    print("BAF_LOH should be less than 0.5 and not equal to 0")
-     tumor_purity=NA
-  }
- 
-  # Calculate tumor purity based on BAF_LOH using the provided equation
-  tumor_purity <- (1 - BAF_LOH * 2)
-  
-  return(tumor_purity)
-}
-
-calculate_tumor_purity_hetloss_by_RDR <- function(RDR) {
-  # Function to calculate tumor purity for heterozygous loss based on RDR
-  
-  # Calculate tumor purity based on RDR using the equation
-  tumor_purity <- (1-RDR)/0.5
-  
-  return(tumor_purity)
-}
-
-calculate_tumor_purity_tetrasomy_by_RDR <- function(rdr_tet) {
-    tumor_purity <- rdr_tet - 1
-    return(tumor_purity)
-  }
-
-  # Function to calculate tumor purity by RDR for trisomy
-  calculate_tumor_purity_trisomy_by_RDR <- function(rdr_tris) {
-    tumor_purity <- 2 * (rdr_tris - 1)
-    return(tumor_purity)
-  }
-
-  # Function to calculate tumor purity by BAF for trisomy
-  calculate_tumor_purity_trisomy_by_BAF <- function(BAF) {
-    tumor_purity <- (2 * BAF - 1) / (BAF - 1)
-    return(tumor_purity)
-  }
-  
-  # Function to calculate tumor purity by BAF for tetrasomy
-  calculate_tumor_purity_tetrasomy_by_BAF <- function(BAF) {
-    tumor_purity <- (1 - 2 * BAF) / (2 * BAF + 1)
-    return(tumor_purity)
-  }
-
-  # Function to calculate tumor purity by BAF_LOH for tetrasomy with 3B
-  calculate_tumor_purity_tetrasomy_by_BAF_LOH_3B <- function(BAF_LOH) {
-    if (BAF_LOH >= 0.5 || BAF_LOH == 0) {
-      stop("BAF_LOH should be less than 0.5 and not equal to 0")
-    }
-    tumor_purity <- (1 / (2 * BAF_LOH)) - 1
-    return(tumor_purity)
-  }
-
-  # Function to calculate tumor purity by BAF_LOH for tetrasomy with 4B
-  calculate_tumor_purity_tetrasomy_by_BAF_LOH_4B <- function(BAF_LOH) {
-    if (BAF_LOH >= 0.5 || BAF_LOH == 0) {
-      stop("BAF_LOH should be less than 0.5 and not equal to 0")
-    }
-    tumor_purity <- (1 - 2 * BAF_LOH) / (2 * BAF_LOH + 1)
-    return(tumor_purity)
-  }
-
-    # Function to calculate tumor purity by BAF_LOH for trisomy
-  calculate_tumor_purity_trisomy_by_BAF_LOH <- function(BAF_LOH) {
-    # Calculate tumor purity based on BAF_LOH using the provided equation
-    tumor_purity <- (1 - BAF_LOH * 2) / BAF_LOH
-    return(tumor_purity)
-  }
-  
-  
-# Function to calculate tumor purity for different scenarios
-calculate_tumor_purity <- function(RDR, BAF) {
-  
-  # Function to calculate tumor purity by RDR for tetrasomy
-  
-
-  
-  # Calculate tumor purity for different scenarios
-  results <- list()
-  
-  # Group by Trisomy
-  results$Trisomy <- list(
-    # Subgroup by Tumor_purity_by_RDR
-    by_RDR = calculate_tumor_purity_trisomy_by_RDR(RDR),
-    # Subgroup by Tumor_purity_by_BAF_no_LOH
-    BY_BAF_no_LOH = calculate_tumor_purity_trisomy_by_BAF(BAF),
-    # Subgroup by Tumor_purity_by_BAF_WITH_LOH
-    BY_BAF_WITH_LOH = calculate_tumor_purity_trisomy_by_BAF_LOH(BAF)
-  )
-  
-  # Group by Tetrasomy
-  results$Tetrasomy <- list(
-    # Subgroup by Tumor_purity_by_RDR
-    by_RDR = calculate_tumor_purity_tetrasomy_by_RDR(RDR),
-    # Subgroup by Tumor_purity_by_BAF_WITH_LOH
-    BY_BAF_WITH_LOH_3B = tryCatch({
-      calculate_tumor_purity_tetrasomy_by_BAF_LOH_3B(BAF)
-    }, error = function(e) {
-      NA
-    }),
-    BY_BAF_WITH_LOH_4B = tryCatch({
-      calculate_tumor_purity_tetrasomy_by_BAF_LOH_4B(BAF)
-    }, error = function(e) {
-      NA
-    })
-  )
-  
-  # Convert results to a dataframe
-  if (BAF<0.4) {
-  results_df <- data.frame(
-    Type = rep(c("Trisomy", "Tetrasomy"), each = 3),
-    Subtype = c("by_RDR", "BY_BAF_no_LOH", "BY_BAF_WITH_LOH", "by_RDR", "BY_BAF_WITH_LOH_3B", "BY_BAF_WITH_LOH_4B"),
-    Tumor_Purity = unlist(results)
-  )} else {
-    
-      results_df <-data.frame(Type = rep(c( "Tetrasomy"), 3),Subtype = c( "by_RDR", "BY_BAF_WITH_LOH_3B", "BY_BAF_WITH_LOH_4B"),Tumor_Purity = unlist(results$Tetrasomy) )
-  }
-  
-  if (RDR>1.5) {
-    results_df=results_df%>%dplyr::filter(Type!="Trisomy")
-    
-  } 
-  
-  return(results_df)
-}
-
-
-# Load necessary libraries
-# if (!requireNamespace("karyoploteR", quietly = TRUE)) {
-#   stop("The 'karyoploteR' package is required but not installed.")
-# }
-# if (!requireNamespace("GenomicRanges", quietly = TRUE)) {
-#   stop("The 'GenomicRanges' package is required but not installed.")
-# }
-# if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
-#   stop("The 'RColorBrewer' package is required but not installed.")
-# }
-
-
-
-Somatic_CN_plot_2 <- function(Somatic_SV, Germline_SV = NULL,MAX_CN=4,Title) {
-
-  # Create a color palette for different clonals
-  unique_clonal <- as.integer(unique(Somatic_SV$Value)*100)
-  
-  num_colors <- length(unique_clonal)
- 
-  dark2_colors=colorRampPalette(c("white", "black"))(100)
-  
-  # Map CNV2 values to colors
-  clonal_colors <- setNames(dark2_colors, 1:100)
-   
-  Somatic_SV$line_color <- clonal_colors[as.integer(Somatic_SV$Value*100)]
-  Somatic_SV= Somatic_SV%>%dplyr::rename(chr=Chromosome, start=Start, end=End)
- 
-  # Determine the maximum copy number for axis scaling
-  #MAX_CN <- max(Somatic_SV$CN, na.rm = TRUE)
-   # Set up the karyotype plot
-  kp <- plotKaryotype(genome = "hg38", chromosomes = paste0("chr", 1:22), plot.type = 4)
-  kpDataBackground(kp, data.panel = 1, col = "grey90")
-  kpPlotRegions(kp, arm_q, col = "white", r0 = 0, r1 = 1)
-  
-  # Add axis to the plot
-  kpAxis(kp, side = 1,labels = NA,numticks = 1)
-  kpAxis(kp, r1 = 1, ymin = 0, ymax = 1, numticks = MAX_CN + 1, cex = 2, data.panel = 1, tick.len = 1, labels = 0:MAX_CN)
-  
-  # Add horizontal lines
-  for (i in 1:4) {
-    kpAbline(kp, h = 1, col = "gray10", ymin = -1, ymax = 1, r0 = 0.5, r1 = i / MAX_CN, lty = 2)
-  }
- 
-  # Plot somatic structural variants with different colors for each clonal
-  for (i in seq_len(nrow(Somatic_SV))) {
-    Somatic_SV_select <- Somatic_SV[i, ]
-    
-    Somatic_SV_torange <- Somatic_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-    
-     if (Somatic_SV_select$CNV == "LOH") {
-      kpPlotRegions(kp, Somatic_SV_torange, col= NA, border = Somatic_SV_select$line_color,r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN, density = 20, angle = 45)
-       
-   
-    } else if (grepl(",CDKN2A," ,Somatic_SV_select$Gene_list)&grepl("loss",Somatic_SV_select$CNV) ) {
-      kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN)
-      kpText(kp, data.panel = 1,col="red" ,chr =Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$CN/ MAX_CN+0.1, labels = paste0("CDKN2A_",Somatic_SV_select$CNV), pos = 2)
-    } 
-       else if (grepl("NF1" ,Somatic_SV_select$Gene_list)&grepl("loss",Somatic_SV_select$CNV)&is.null(Germline_SV) ) {
-        kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN)
-        kpText(kp, data.panel = 1,col="red" ,chr =Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$CN/ MAX_CN+0.1, labels = paste0("NF1_",Somatic_SV_select$CNV), pos = 2)
-    } 
-    
-     else {
-      kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 = (Somatic_SV_select$CN / MAX_CN) - 0.05, r1 = Somatic_SV_select$CN / MAX_CN)
-    }
-    
-#    kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 =  (Somatic_SV_select$CN/MAX_CN)-0.05, r1 = Somatic_SV_select$CN/MAX_CN)
-  #  kpText(kp, data.panel = 1, chr = Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$r1, labels = Somatic_SV_select$symbol, col = Somatic_SV_select$line_color, pos = 1, cex = 1)
-  }
-  
-  # Plot germline structural variants
-  if (!is.null(Germline_SV)&nrow(Germline_SV)>0) {
-    for (i in seq_len(nrow(Germline_SV))) {
-      Germline_SV_select <- Germline_SV[i, ]
-      Germline_SV_torange <- Germline_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-      kpPlotRegions(kp, Germline_SV_torange, col= "green", border = "green",r0 = (Germline_SV_select$cn / MAX_CN) - 0.05, r1 = Germline_SV_select$cn / MAX_CN, density = 60, angle = -45)
-      kpText(kp, data.panel = 1, chr = Germline_SV_select$chr, x = Germline_SV_select$start, y = Germline_SV_select$cn/MAX_CN, labels = paste0("Germline_" ,Germline_SV_select$name), pos = 2)
-      
-    }  
-  }
-  
-  Group=Somatic_SV[,c("Value","Group2")]%>%dplyr::filter(!grepl("Normal|other",Group2))%>%arrange(desc(Value))%>%unique()%>%mutate(Value=as.integer(Value*100))
-   
-  
-  title(main = Title, cex.main = 1.5, line = 2)
-  # Add y-axis label using base R graphics
-  mtext("Copy number", side = 2, line = 2.5, cex = 1.2) # Adjust `line` and `cex` as needed
-  
-  # Set up layout for legends
-  par(mfrow = c(2, 1), mar = c(2, 6, 3, 2), oma = c(0, 0, 2, 0)) # Adjust margins for layout
-  
-  # Plot empty frame to create space for legends
-  plot.new()
- # legend("bottom", legend = legend_labels, fill = legend_colors, title = "Subclonal_proportion", cex = 0.8, border = "black", ncol = length(legend_labels))
-  legend_labels <-paste0("Clonal_", unique(Group$Group2))
-  legend_colors <- clonal_colors [as.character (Group$Value)]
-  legend("topleft", legend = legend_labels, fill = legend_colors, title = "Subclonal: Proportion", cex = 0.4)  
-  # LOH texture legend
-  #legend("bottom", inset = c(0, 0), legend = "LOH", fill = NA, density = 20, angle = 45, title = "LOH", cex = 0.8, border = "black")
-  legend("topleft", inset=c(0.1,0.1),  legend = c("LOH","Normal"), fill = c(NA,"black"), density = c(20,100), angle =c(45,0), title = "Normal and LOH", cex = 0.4, border = "black")
-  
- 
-}
-
-Somatic_seg_Raw_RDR_plot_2 <- function(Somatic_SV, Germline_SV = NULL) {
-  load("/Volumes/lyu.yang/MAC_1/R/Public_database/Reference/Chrosmome_cytobank.rdata")
-  
-  Somatic_SV= Somatic_SV%>%dplyr::rename(chr=Chromosome, start=Start, end=End)
-  MAX_RDR <- max(Somatic_SV$RDR, na.rm = TRUE)%>%ceiling()
-  if (MAX_RDR<2) {
-    MAX_RDR=2
-  }
-   # Set up the karyotype plot
-  kp <- plotKaryotype(genome = "hg38", chromosomes = paste0("chr", 1:22), plot.type = 4)
-  kpDataBackground(kp, data.panel = 1, col = "grey90")
-  kpPlotRegions(kp, arm_q, col = "white", r0 = 0, r1 = 1)
-  
-  # Add axis to the plot
-  
- # kpAxis(kp, side = 1,labels = NA,numticks = 1)
-  # kpAxis(kp, r1 = 1, ymin = 0, ymax = 1, numticks = MAX_RDR  , cex = 2, data.panel = 1, tick.len = 1,labels = NA)
-  
-  y_ticks <- seq(0, MAX_RDR, by = 0.5)
-  
-  y_labels <- as.character(y_ticks)  # Display labels for 0, 0.5, 1, and MAX_RDR
-
-# Add y-axis to the plot
-  kpAxis(kp, side = 1, labels = NA, numticks = 1)  # Side 1 may not need labels if it's redundant or for stylistic choices
-  kpAxis(kp, r1 = 1, ymin = 0, ymax = 1, numticks = MAX_RDR*2+1,cex = 2, data.panel = 1, tick.len = 1,labels = y_ticks)
- 
-  
-  # Add horizontal lines
-  for (i in c(0.5,1.5,2)) {
-    kpAbline(kp, h = 1, col = "gray10", ymin = -1, ymax = 1, r0 = 0.5, r1 = i / MAX_RDR, lty = 2)
-    
-  }
-  kpAbline(kp, h = 1, col = "blue", ymin = -1, ymax = 1, r0 = 0.5, r1 = 1 / MAX_RDR, lty = 2,lwd=2)
- 
- 
-  # Plot somatic structural variants with different colors for each clonal
-  for (i in seq_len(nrow(Somatic_SV))) {
-    Somatic_SV_select <- Somatic_SV[i, ]
-    
-    Somatic_SV_torange <- Somatic_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-    kpPlotRegions(kp, Somatic_SV_torange, col= "black", border =NA,r0 = (Somatic_SV_select$RDR / MAX_RDR) - 0.01, r1 = Somatic_SV_select$RDR/ MAX_RDR)
-   
-
-    
-#    kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 =  (Somatic_SV_select$CN/MAX_CN)-0.05, r1 = Somatic_SV_select$CN/MAX_CN)
-  #  kpText(kp, data.panel = 1, chr = Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$r1, labels = Somatic_SV_select$symbol, col = Somatic_SV_select$line_color, pos = 1, cex = 1)
-  }
-  
-  # Plot germline structural variants
-  if (!is.null(Germline_SV)) {
-    for (i in seq_len(nrow(Germline_SV))) {
-      Germline_SV_select <- Germline_SV[i, ]
-      Germline_SV_torange <- Germline_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-      
-      kpPlotRegions(kp, Germline_SV_torange, col = Germline_SV_select$color, r0 = Germline_SV_select$r0, r1 = Germline_SV_select$r1)
-      kpText(kp, data.panel = 1, chr = Germline_SV_select$chr, x = Germline_SV_select$start, y = Germline_SV_select$r1, labels = Germline_SV_select$symbol, col = Germline_SV_select$color, pos = 2)
-    }
-  }
-  
-  
- title(main = "Somatic RDR Plot (before normalization)", cex.main = 1.5, line = 2)
- # Add y-axis label using base R graphics
-  mtext("Read depth ratio", side = 2, line = 2.5, cex = 1.2) # Adjust `line` and `cex` as needed
-}
-
-
-
-Somatic_seg_Norm_RDR_plot_2 <- function(Somatic_SV, Germline_SV = NULL) {
-  load("/Volumes/lyu.yang/MAC_1/R/Public_database/Reference/Chrosmome_cytobank.rdata")
-  
-  Somatic_SV= Somatic_SV%>%dplyr::rename(chr=Chromosome, start=Start, end=End)
-  MAX_RDR <- max(Somatic_SV$Norm_RDR, na.rm = TRUE)%>%ceiling()
-  if (MAX_RDR<2) {
-    MAX_RDR=2
-  }
-   # Set up the karyotype plot
-  kp <- plotKaryotype(genome = "hg38", chromosomes = paste0("chr", 1:22), plot.type = 4)
-  kpDataBackground(kp, data.panel = 1, col = "grey90")
-  kpPlotRegions(kp, arm_q, col = "white", r0 = 0, r1 = 1)
-  
-  # Add axis to the plot
-  
- # kpAxis(kp, side = 1,labels = NA,numticks = 1)
-  # kpAxis(kp, r1 = 1, ymin = 0, ymax = 1, numticks = MAX_RDR  , cex = 2, data.panel = 1, tick.len = 1,labels = NA)
-  
-  y_ticks <- seq(0, MAX_RDR, by = 0.5)
-  
-  y_labels <- as.character(y_ticks)  # Display labels for 0, 0.5, 1, and MAX_RDR
-
-# Add y-axis to the plot
-  kpAxis(kp, side = 1, labels = NA, numticks = 1)  # Side 1 may not need labels if it's redundant or for stylistic choices
-  kpAxis(kp, r1 = 1, ymin = 0, ymax = 1, numticks = MAX_RDR*2+1,cex = 2, data.panel = 1, tick.len = 1,labels = y_ticks)
- 
-  
-  # Add horizontal lines
-  for (i in c(0.5,1.5,2)) {
-    kpAbline(kp, h = 1, col = "gray10", ymin = -1, ymax = 1, r0 = 0.5, r1 = i / MAX_RDR, lty = 2)
-    
-  }
-  kpAbline(kp, h = 1, col = "blue", ymin = -1, ymax = 1, r0 = 0.5, r1 = 1 / MAX_RDR, lty = 2,lwd=2)
- 
- 
-  # Plot somatic structural variants with different colors for each clonal
-  for (i in seq_len(nrow(Somatic_SV))) {
-    Somatic_SV_select <- Somatic_SV[i, ]
-    
-    Somatic_SV_torange <- Somatic_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-    kpPlotRegions(kp, Somatic_SV_torange, col= "black", border =NA,r0 = (Somatic_SV_select$Norm_RDR / MAX_RDR) - 0.01, r1 = Somatic_SV_select$Norm_RDR/ MAX_RDR)
-   
-
-    
-#    kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 =  (Somatic_SV_select$CN/MAX_CN)-0.05, r1 = Somatic_SV_select$CN/MAX_CN)
-  #  kpText(kp, data.panel = 1, chr = Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$r1, labels = Somatic_SV_select$symbol, col = Somatic_SV_select$line_color, pos = 1, cex = 1)
-  }
-  
-  # Plot germline structural variants
-  if (!is.null(Germline_SV)) {
-    for (i in seq_len(nrow(Germline_SV))) {
-      Germline_SV_select <- Germline_SV[i, ]
-      Germline_SV_torange <- Germline_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-      
-      kpPlotRegions(kp, Germline_SV_torange, col = Germline_SV_select$color, r0 = Germline_SV_select$r0, r1 = Germline_SV_select$r1)
-      kpText(kp, data.panel = 1, chr = Germline_SV_select$chr, x = Germline_SV_select$start, y = Germline_SV_select$r1, labels = Germline_SV_select$symbol, col = Germline_SV_select$color, pos = 2)
-    }
-  }
-  
-  
- title(main = "Somatic RDR Plot (after normalization)", cex.main = 1.5, line = 2)
- # Add y-axis label using base R graphics
-  mtext("Read depth ratio", side = 2, line = 2.5, cex = 1.2) # Adjust `line` and `cex` as needed
-}
-
-
-Somatic_seg_BAF_plot_2 <- function(Somatic_SV, Germline_SV = NULL) {
-  
-  
-  Somatic_SV= Somatic_SV%>%dplyr::rename(chr=Chromosome, start=Start, end=End)
-   # Set up the karyotype plot
-  kp <- plotKaryotype(genome = "hg38", chromosomes = paste0("chr", 1:22), plot.type = 4)
-  kpDataBackground(kp, data.panel = 1, col = "grey90")
-  kpPlotRegions(kp, arm_q, col = "white", r0 = 0, r1 = 1)
-  
-  # Add axis to the plot
- 
-  kpAxis(kp, side = 1,labels = NA,numticks = 1)
-  kpAxis(kp, r1 = 1, ymin = 0, ymax = 0.5, numticks =3, cex = 2, data.panel = 1, tick.len = 1, labels = c(0,0.25,0.5))
-  kpAbline(kp, h = 1, col = "gray10", ymin = -1, ymax = 1, r0 = 0.5, r1 = 0.25 / 0.5, lty = 2)
-
-  # Plot somatic structural variants with different colors for each clonal
-  for (i in seq_len(nrow(Somatic_SV))) {
-    Somatic_SV_select <- Somatic_SV[i, ]
-    
-    Somatic_SV_torange <- Somatic_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-    kpPlotRegions(kp, Somatic_SV_torange, col= "black", border =NA,r0 = (Somatic_SV_select$BAF / 0.5) - 0.01, r1 = Somatic_SV_select$BAF/0.5)
-   
-
-    
-#    kpPlotRegions(kp, Somatic_SV_torange, col = Somatic_SV_select$line_color, border = Somatic_SV_select$line_color, r0 =  (Somatic_SV_select$CN/MAX_CN)-0.05, r1 = Somatic_SV_select$CN/MAX_CN)
-  #  kpText(kp, data.panel = 1, chr = Somatic_SV_select$chr, x = Somatic_SV_select$start, y = Somatic_SV_select$r1, labels = Somatic_SV_select$symbol, col = Somatic_SV_select$line_color, pos = 1, cex = 1)
-  }
-  
-  # Plot germline structural variants
-  if (!is.null(Germline_SV)) {
-    for (i in seq_len(nrow(Germline_SV))) {
-      Germline_SV_select <- Germline_SV[i, ]
-      Germline_SV_torange <- Germline_SV_select[, c("chr", "start", "end")] %>% toGRanges()
-      
-      kpPlotRegions(kp, Germline_SV_torange, col = Germline_SV_select$color, r0 = Germline_SV_select$r0, r1 = Germline_SV_select$r1)
-      kpText(kp, data.panel = 1, chr = Germline_SV_select$chr, x = Germline_SV_select$start, y = Germline_SV_select$r1, labels = Germline_SV_select$symbol, col = Germline_SV_select$color, pos = 2)
-    }
-  }
-  
-  
- title(main = "Somatic BAF Plot", cex.main = 1.5, line = 2)
-  mtext("BAF", side = 2, line = 2.5, cex = 1.2) # Adjust `line` and `cex` as needed
-}
-
-
-generate_normal_plots <- function(data, UMAP_data ,n_cluster=8, seed = 123456,Cluster_select) {
-  # Select relevant columns for UMAP
-  # UMAP
-  set.seed(seed)
-  UMAP_out <- umap::umap(UMAP_data, n_neighbors = n_cluster, n_components = 2, metric = "euclidean")$layout %>%
-    as.data.frame() %>%
-    setNames(c("UMAP1", "UMAP2"))
-  
-  set.seed(seed)
-  UMAP_out_kmeans <- kmeans(UMAP_out, centers = n_cluster, nstart = 20)
-  
-  # Combine original data with UMAP output and k-means clusters
-  UMAP_out2 <- cbind(data, UMAP_out) %>%
-    mutate(Cluster = as.character(UMAP_out_kmeans$cluster))
-  
-  # Create summary table
-  df_summary <- UMAP_out2 %>%
-    mutate(Cluster = factor(Cluster, levels = unique(Cluster))) %>%
-    group_by(Cluster) %>%
-    summarize(RDR = mean(RDR), BAF = mean(BAF)) %>%
-    arrange(RDR)%>%mutate(CNV=ifelse(Cluster%in%Cluster_select ,"Normal","Other"))
-  
-  Bias=df_summary%>%dplyr::filter(CNV=="Normal")%>%.$RDR
- 
-  # Annotate data with clusters
-  UMAP_out2$Cluster <- factor(UMAP_out2$Cluster, levels = unique(UMAP_out2$Cluster))
-  
-  # Create label data frame
-  label.df <- data.frame(Cluster = unique(UMAP_out2$Cluster), label = paste0("cluster: ", unique(UMAP_out2$Cluster)))
-
-  # Normal_CNV
-  UMAP_out3=UMAP_out2%>%left_join(.,df_summary[,c("Cluster","CNV")])
-  UMAP_plot_Normal <- ggplot(UMAP_out3, aes(x = BAF, y = RDR, color = CNV)) +
-    geom_point(size = 3)  +ylim(c(0,4))+geom_hline(yintercept=1, linetype="dashed", color = "red")+
-    ggtitle(paste0("Normal cluster:", n_cluster,"in the raw data"))
-  
- UMAP_out4=UMAP_out3%>%mutate(Norm_RDR=RDR/Bias)  
- UMAP_plot_Normal_bias <- ggplot(UMAP_out4, aes(x = BAF, y = Norm_RDR, color = CNV)) +
-    geom_point(size = 3) +ylim(c(0,4))+geom_hline(yintercept=1, linetype="dashed", color = "red")+
-    ggtitle(paste0("Normal cluster:", n_cluster,"in the data with bias normalization"))
-  
-
-  
- return(list(UMAP_plot_list = cowplot::plot_grid(UMAP_plot_Normal,UMAP_plot_Normal_bias), Norm_RDR = UMAP_out4))
-}
-
-generate_umap_plots <- function(data, UMAP_data ,n_cluster = 10, seed = 123456) {
-  # Select relevant columns for UMAP
-  # UMAP
-  set.seed(seed)
-  UMAP_out <- umap::umap(UMAP_data, n_neighbors = n_cluster, n_components = 2, metric = "euclidean")$layout %>%
-    as.data.frame() %>%
-    setNames(c("UMAP1", "UMAP2"))
-  
-  set.seed(seed)
-  UMAP_out_kmeans <- kmeans(UMAP_out, centers = n_cluster, nstart = 20)
-  
-  # Combine original data with UMAP output and k-means clusters
-  UMAP_out2 <- cbind(data, UMAP_out) %>%
-    mutate(Cluster = as.character(UMAP_out_kmeans$cluster))
-  
-  # Create summary table
-  df_summary <- UMAP_out2 %>%
-    mutate(Cluster = factor(Cluster, levels = unique(Cluster))) %>%
-    group_by(Cluster) %>%
-    summarize(RDR = mean(RDR), BAF = mean(BAF)) %>%
-    arrange(RDR)%>%mutate(CNV=case_when(BAF>0.45&RDR>0.85&RDR<1.05 ~"Normal",TRUE ~ "Other"))
- 
-  # Annotate data with clusters
-  UMAP_out2$Cluster <- factor(UMAP_out2$Cluster, levels = unique(UMAP_out2$Cluster))
-  
-  # Print summary table
-  summary_table <- knitr::kable(df_summary, caption = "UMAP cluster") %>%
-    kableExtra::kable_styling(latex_options = c("scale_down"))
-  print(summary_table)
-  
-  # Create label data frame
-  label.df <- data.frame(Cluster = unique(UMAP_out2$Cluster), label = paste0("cluster: ", unique(UMAP_out2$Cluster)))
-  
-  label.df_2 <- UMAP_out2 %>%
-    mutate(Cluster = factor(Cluster, levels = unique(Cluster))) %>%
-    group_by(Cluster) %>%
-    summarize(UMAP1 = min(UMAP1), UMAP2 = max(UMAP2)) %>%
-    left_join(label.df, by = "Cluster")
-  
-  # UMAP plot
-  UMAP_plot <- ggplot(UMAP_out2, aes(x = UMAP1, y = UMAP2)) +
-    geom_point(aes(colour = as.factor(Cluster))) +
-    theme(legend.position = "none") +
-    ggrepel::geom_label_repel(data = label.df_2, aes(label = label), vjust = 1) +
-    ggtitle("UMAP plot")
-  
- 
-  
-  #UMAP-based k-means plot
-  UMAP_plot_RDR <- ggplot(UMAP_out2, aes(x = BAF, y = RDR, color = Cluster)) +
-    geom_point(size = 3) +
-    ggtitle("UMAP-based Kmeans")
-
-  Plot_list=cowplot::plot_grid(UMAP_plot,UMAP_plot_RDR)
-  
-  return(list(UMAP_plot_list = Plot_list, summary_table = df_summary))
-}
-
-plot_density_with_vline <- function(data, x_col = "RDR") {
-  ggplot(data, aes_string(x = x_col)) +
-    geom_density(fill = "blue", alpha = 0.1) +
-    geom_vline(xintercept = 1, color = "red", linetype = "dashed") +
-    labs(x = x_col, y = "Density", title = paste("Density Plot of", x_col)) +
-    theme_minimal()
-}
-find_peaks <- function(density_estimate) {
-  y <- density_estimate$y
-  peaks <- c(FALSE, diff(sign(diff(y))) == -2, FALSE)
-  return(peaks)
-}
-
-find_peaks <- function(density_estimate) {
-  y <- density_estimate$y
-  peaks <- c(FALSE, diff(sign(diff(y))) == -2, FALSE)
-  return(peaks)
-}
-
-density_with_hdi <- function(data, bandwidth = 0.03, credMass = 0.9, initial_group_number = 1) {
-  library(HDInterval)
-  
-  # Compute the density estimate
-  density_estimate <- density(data, bw = bandwidth)
-  
-  # Find peaks
-  peaks <- find_peaks(density_estimate)
-  peak_values <- density_estimate$x[peaks]
-  
-  # Compute HDI
-  hdi_result <- hdi(density_estimate, credMass = credMass, allowSplit = TRUE)
-  hdi_df <- as.data.frame(hdi_result)
-  #%>%dplyr::filter(begin<0.85&begin>0.1)
-  
-  # Filter peaks to include only those within HDI intervals
-  in_hdi <- sapply(peak_values, function(pv) any(hdi_df$begin <= pv & pv <= hdi_df$end))
-  filtered_peak_values <- peak_values[in_hdi]
-  
-  # Filter out peak values greater than 0.9
-  filtered_peak_values <- filtered_peak_values
-  #[filtered_peak_values <= 0.9&filtered_peak_values>0.1 ]
-  
-  # Find the corresponding HDI interval for each peak
-  min_values <- sapply(filtered_peak_values, function(pv) hdi_df$begin[which(hdi_df$begin <= pv & pv <= hdi_df$end)])
-  max_values <- sapply(filtered_peak_values, function(pv) hdi_df$end[which(hdi_df$begin <= pv & pv <= hdi_df$end)])
-  
-  # Create a dataframe for filtered peak values with group numbers, min_value, and max_value
-  peak_df <- data.frame(
-    Value = round(filtered_peak_values,2),
-    Group = seq(initial_group_number, length.out = length(filtered_peak_values)),
-    min_value = min_values,
-    max_value = max_values
-  )
-  
-  # Plot the density with peaks and HDI highlighted
-  plot(density_estimate, main = "Density with Peaks and HDI Highlighted")
-  
-  # Find y values for the filtered peaks
-  peak_y_values_hi <- approx(density_estimate$x, density_estimate$y, xout = peak_df$Value)$y
-  points(peak_df$Value, peak_y_values_hi, col = "red", pch = 19)
-  
-  peak_y_values <- approx(density_estimate$x, density_estimate$y, xout = hdi_df$begin)$y
-  points(hdi_df$begin,  peak_y_values, col = "blue", pch = 19)
-  
-  peak_y_values <- approx(density_estimate$x, density_estimate$y, xout = hdi_df$end)$y
-  points(hdi_df$end, peak_y_values, col = "green", pch = 19)
-  
-  peak_df2=peak_df%>%mutate(Y=peak_y_values_hi)
-  # Return results as a list
-  result_list <- list(
-    density_estimate = density_estimate,
-    peak_values_df = peak_df2,
-    hdi_result = hdi_result
-      )
-  
-  return(result_list)
-}
-
-categorize_CNV <- function(data) {
-  data <- data %>%
-    rowwise() %>%
-    mutate(CNV = ifelse(
-      (Norm_RDR >= normal_setting$Norm_RDR[1] & Norm_RDR <= normal_setting$Norm_RDR[2]) & (BAF >= normal_setting$BAF[1] & BAF <= normal_setting$BAF[2]), "Normal",
-      ifelse((Norm_RDR >= LOH_setting$Norm_RDR[1] & Norm_RDR <= LOH_setting$Norm_RDR[2]) & (BAF >= LOH_setting$BAF[1] & BAF <= LOH_setting$BAF[2]), "LOH",
-      #ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF >= trisomy_setting$BAF[1] & BAF <= trisomy_setting$BAF[2], "Trisomy",
-      ifelse(Norm_RDR >= trisomy_setting$Norm_RDR[1] & Norm_RDR <= trisomy_setting$Norm_RDR[2] & BAF<=0.3, "Trisomy", # Trisomy+LOH
-      ifelse(Norm_RDR >= tetrasomy_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_setting$Norm_RDR[2] & BAF >= tetrasomy_setting$BAF[1] & BAF <= tetrasomy_setting$BAF[2], "Tetrasomy",
-      ifelse(Norm_RDR >= tetrasomy_LOH_setting$Norm_RDR[1] & Norm_RDR <= tetrasomy_LOH_setting$Norm_RDR[2] & BAF >= tetrasomy_LOH_setting$BAF[1] & BAF <= tetrasomy_LOH_setting$BAF[2], "Tetrasomy_LOH",
-      ifelse(Norm_RDR >= het_loss_setting$Norm_RDR[1] & Norm_RDR <= het_loss_setting$Norm_RDR[2] & BAF >= het_loss_setting$BAF[1] & BAF <= het_loss_setting$BAF[2], "Het_loss",
-      ifelse(Norm_RDR >= homo_loss_setting$Norm_RDR[1] & Norm_RDR <= homo_loss_setting$Norm_RDR[2] & (BAF >= homo_loss_setting$BAF[2] | BAF <= homo_loss_setting$BAF[1]), "Homo_loss",
-      "Unclassified"))))))))
-  
-  return(data)
-}
-
-calculate_subclone_purities <- function(data) {
-  data <- data %>%
-    mutate(Subclone_p = case_when(
-      CNV == "LOH" ~ calculate_tumor_purity_by_BAF_LOH(BAF),
-      grepl("Tetrasomy",CNV)   ~ calculate_tumor_purity_tetrasomy_by_RDR(Norm_RDR),
-      grepl("Trisomy",CNV)  ~ calculate_tumor_purity_trisomy_by_RDR(Norm_RDR),
-      CNV == "Het_loss" ~ calculate_tumor_purity_hetloss_by_RDR(Norm_RDR),
-      CNV == "Homo_loss" ~ 1 - Norm_RDR,
-      CNV == "Normal" ~ 1,
-      TRUE ~ NA_real_  # In case CNV doesn't match any condition
-    ))
-  
-  return(data)
-}
-```
-
-
 
 # Germline CNV 
 ```{r,include=F}
@@ -1066,8 +186,6 @@ if (max(Somatic_seg$RDR)>3) {
 }
 
 ```
-
-
 
 ```{r,include=F,eval=F}
 
@@ -1128,7 +246,6 @@ print(paste0("peak:",Max_out$Value))
 
 
 ```{r,fig.width=16,fig.height=18,include=T}
-
 if (config$tumor_type == "PDX"|grepl("PDX",Sample_name)) {
   Genomic_settings <- config$genomic_settings$PDX
 } else {
@@ -1136,8 +253,11 @@ if (config$tumor_type == "PDX"|grepl("PDX",Sample_name)) {
 }
  
 
- Cluster_number=config$Cluster_number
+
+
+Cluster_number=config$Cluster_number
 if (Max_out$Value<0.95) {
+ 
  print ("bias")
  UMAP_data=Data_filter[,c("RDR","BAF")] 
 # Need adjust cluster number in yml based on the variety of data.
@@ -1148,7 +268,7 @@ if (Max_out$Value<0.95) {
  
  Normal_cluster=P1$summary_table%>%dplyr::filter(BAF>0.45&RDR<0.95&RDR>Bias_range[1])%>%mutate(Diff=abs(RDR-1))%>%arrange(Diff)%>%.$Cluster%>%.[1]
  if (! is.na(Normal_cluster)) {
-   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster)
+   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster,Bias="")
    cowplot::plot_grid(P1$UMAP_plot_list,P2$UMAP_plot_list,ncol=1)
  }  else {
    
@@ -1165,7 +285,7 @@ if (Max_out$Value<0.95) {
  
  Normal_cluster=P1$summary_table%>%dplyr::filter(BAF>0.45&RDR>1&RDR<Bias_range[2])%>%mutate(Diff=abs(RDR-1))%>%arrange(Diff)%>%.$Cluster%>%.[1]
  if (! is.na(Normal_cluster)) {
-   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster)
+   P2=generate_normal_plots(Data_filter,UMAP_data, n_cluster =Cluster_number, seed = 123456,Cluster_select=Normal_cluster,Bias="")
    cowplot::plot_grid(P1$UMAP_plot_list,P2$UMAP_plot_list,ncol=1)
  }  else {
    
@@ -1174,12 +294,11 @@ if (Max_out$Value<0.95) {
    
  }
    
-   
- 
-
-
-} 
+}
 ```
+
+
+
 
 ## Clonality defniation by UMAP-based kmeans 
 
@@ -1190,9 +309,7 @@ names(Type_color)=factor(c("Homo_loss","Het_loss","Normal","Trisomy","Tetrasomy"
 CN_label=data.frame(Type=c("Homo_loss","Het_loss","Normal" ,"Trisomy" , "Tetrasomy"),CN=c(0,1:4))
 CNV_colors <-RColorBrewer::brewer.pal(9,"Paired")
 names(CNV_colors)=c("Normal","LOH" , "Trisomy","Trisomy_Tetrasomy_mix" ,"High_level_ampli", "Tetrasomy", "Tetrasomy_LOH" ,"Homo_loss" ,"Het_loss" )
-
-
-normal_setting <- Genomic_settings$normal
+normal_setting=Genomic_settings$normal
 LOH_setting <- Genomic_settings$LOH
 trisomy_setting <- Genomic_settings$trisomy
 tetrasomy_setting <- Genomic_settings$tetrasomy
@@ -1203,68 +320,50 @@ homo_loss_setting <- Genomic_settings$homo_loss
 
 ```
 
-```{r}
-# tumor_purity <- seq(0.2, 1, by = 0.1)
-# 
-# # Calculate RDR for trisomy
-# RDR_trisomy <- 1 + tumor_purity / 2
-# 
-# # Calculate BAF for trisomy assuming AAB scenario
-# BAF_trisomy <- 0.33 * tumor_purity + 0.5 * (1 - tumor_purity)
-# 
-# # Create a data frame to store these values
-# Trisomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR = RDR_trisomy, BAF = BAF_trisomy)
-# trisomy_model <- lm(BAF ~ RDR, data = Trisomy_data)
-#Trisomy purity (0.3-0.9, RDR 1.1~1.45, BAF 0.35 0.47)
-
-Trisomy_model_predict <- function(model, RDR, BAF, threshold=0.5) {
-  
-    # Validate model input
-    if (missing(model) || !inherits(model, "lm")) {
-        stop("Please provide a valid linear model.")
-    }
-    
-    # Create a new data frame for the specific point
-    specific_point <- data.frame(RDR = RDR)
-    
-    # Predict the BAF for this specific RDR using the model
-    predicted_BAF <- predict(model, newdata = specific_point)
-    
-    # Calculate the residual (difference between actual and predicted BAF)
-    residual <- BAF - predicted_BAF
-    
-    # Determine if the point is close to the line based on the threshold
-    is_close <- abs(residual) <= threshold
-    
-    # Output the result along with some informative data
-    list(
-        Predicted_BAF = predicted_BAF,
-        Actual_BAF = BAF,
-        Residual = residual,
-        Is_Close_To_Line = is_close,
-        Message = if (is_close) "The point is close to the regression line." else "The point is not close to the regression line."
-    )
-}
-```
 
 
 ```{r}
-trisomy_data <- data.frame(
-  Tumor_Purity = seq(0.4, 0.9, by = 0.1),
-  RDR = 1 + seq(0.4, 0.9, by = 0.1) / 2,
-  BAF = 0.33 * seq(0.4, 0.9, by = 0.1) + 0.5 * (1 - seq(0.4, 0.9, by = 0.1))
-)
-trisomy_model <- lm(BAF ~ RDR, data = trisomy_data)
+# trisomy_model <- lm(BAF ~ RDR, data = trisomy_data)
+tumor_purity <- seq(0.2, 0.9, by = 0.1)
+LOH_per <- seq(0, 1, by = 0.2)
+LOH_type <- c("Gain", "Loss")
+Tetrasomy_data <- data.frame(Tumor_Purity = tumor_purity, RDR =1+tumor_purity , BAF = 0.5)
+
+# Create a grid of all combinations of tumor_purity, LOH_per, and LOH_type
+Tetrasomy_LOH_data <- expand.grid(Tumor_Purity = tumor_purity, 
+                                LOH_per = LOH_per, 
+                                LOH_type = LOH_type)%>%mutate(LOH_purity=Tumor_Purity*LOH_per)
+
+# Calculate RDR for Tetrasomy
+Tetrasomy_LOH_data$RDR <- 1+Tetrasomy_LOH_data$Tumor_Purity
+
+Tetrasomy_LOH_data2 <- Tetrasomy_LOH_data %>%
+  mutate(BAF = case_when(
+    LOH_type == "Loss" ~ 0.5 * (1 - Tumor_Purity*LOH_purity) + 0.25 *  (Tumor_Purity*LOH_purity) ,
+    LOH_type == "Gain" ~ 0.5 * (1 - Tumor_Purity*LOH_purity) + 1 *  (Tumor_Purity*LOH_purity) ,
+    TRUE ~ NA_real_  # Default case, should not be needed but included for safety
+  ))%>%mutate(BAF=ifelse(BAF>0.5,1-BAF,BAF))%>%
+  mutate(LOH_Label = paste( "LOH Type:", LOH_type, 
+                       "LOH %:", LOH_per, 
+                       sep = " "))
+
+
+Tetrasomy_LOH_data_line_model=Tetrasomy_LOH_data2%>%dplyr::filter(LOH_per==1)%>%dplyr::filter(LOH_type=="Gain")
+Tetrasomy_LOH_model <- lm(BAF ~ RDR, data = Tetrasomy_LOH_data_line_model)
+
+
 
 if (Max_out$Value<0.95 | Max_out$Value>1.05) {
  df=P2[[2]]
+ Bias_set=P2[[3]]
 } else {
   df=Data_filter%>%mutate(Norm_RDR=RDR)
+  Bias_set=1
   
 }
 
 
-Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.45&BAF>0.3&BAF<0.47)
+Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.45&BAF>0.3&BAF<0.5)
 
 if (grepl("PDX",Sample_name)){
   trisomy_data <- data.frame(
@@ -1273,7 +372,7 @@ if (grepl("PDX",Sample_name)){
   BAF = 0.33 * seq(0.4, 1, by = 0.1) + 0.5 * (1 - seq(0.4,1, by = 0.1))
 )
 
- Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.5&BAF>0.3&BAF<0.47)
+ Data_select=df%>%dplyr::filter(Norm_RDR>1.1&Norm_RDR<1.5&BAF>0.3&BAF<0.5)
   
 }
 
@@ -1282,21 +381,27 @@ if (nrow(Data_select)>0) {
  results <- Data_select%>%.[,c("Chromosome","Start", "End","BAF","Norm_RDR")]%>%dplyr::rename(RDR=Norm_RDR) %>%
    rowwise() %>%
    mutate(
-    Analysis = list(Trisomy_model_predict(trisomy_model , RDR, BAF, threshold = 0.02))
+    Analysis = list(Trisomy_model_predict(Tetrasomy_LOH_model, RDR, BAF, threshold = 0.03))
   )%>%ungroup() %>%  # Optionally remove old columns if you only want the results
   tidyr::unnest_wider(col = Analysis)%>%arrange(RDR)
 
-  Data_select_2=Data_select%>%left_join(.,results[,c(1,2,3,9)])%>%mutate(CNV=ifelse(Is_Close_To_Line==T,"Trisomy","Other"))
-  G1=ggplot(Data_select_2,aes(x=BAF,y=Norm_RDR,color=factor(Is_Close_To_Line)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
-  coef_intercept <- coef(trisomy_model)[1]
-   coef_slope <- coef(trisomy_model)[2]
+ Data_select_2=Data_select%>%left_join(.,results[,c(1,2,3,9)])%>%mutate(CNV=ifelse(Is_Close_To_Line==T|BAF>0.45,"Tetrasomy","Other"))
+ G1=ggplot(Data_select_2,aes(x=BAF,y=Norm_RDR,color=factor(Is_Close_To_Line)))+geom_point()+geom_point(data=Tetrasomy_LOH_data_line_model,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+  coef_intercept <- coef(Tetrasomy_LOH_model)[1]
+   coef_slope <- coef(Tetrasomy_LOH_model)[2]
   # Adding line calculation to results
-   Data_select_3 <- Data_select_2 %>%
-      mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
-       mutate(CNV2=ifelse(BAF < Line_BAF,"Trisomy",CNV) )%>%dplyr::select(-Line_BAF) # Select points where BAF is less than the calculated
-   G2=ggplot(Data_select_3 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=trisomy_data,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+   # Data_select_3 <- Data_select_2 %>%
+   #    mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
+   #     mutate(CNV2=ifelse(BAF < Line_BAF,"Trisomy",CNV) )%>%dplyr::select(-Line_BAF) # Select points where BAF is less than the calculated
+   Data_select_3 <- Data_select_2%>% dplyr::filter(CNV=="Other")%>%
+       mutate(Line_BAF = coef_intercept + coef_slope * Norm_RDR) %>%
+        mutate(CNV=ifelse(BAF < Line_BAF,"Trisomy","Tetrasomy") )%>%dplyr::select(-Line_BAF)
+   Data_select_2_rm=Data_select_2%>% dplyr::filter(CNV!="Other")
+    Data_select_4=rbind(Data_select_2_rm,Data_select_3)%>%dplyr::rename(CNV2=CNV)
    
-   categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_3[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV = ifelse(is.na(CNV2), CNV, ifelse(CNV2 == "Trisomy", "Trisomy", CNV)))
+   G2=ggplot(Data_select_4 ,aes(x=BAF,y=Norm_RDR,color=factor(CNV2)))+geom_point()+geom_point(data=Tetrasomy_LOH_data_line_model,aes(x=BAF,y=RDR),shape=23, fill="blue", color="darkred", size=3)
+   
+   categorized_data<- categorize_CNV(df)%>%left_join(.,Data_select_4[,c("Chromosome","Start", "End","CNV2")])%>%mutate(CNV3 =ifelse(!is.na(CNV2), CNV2, as.character(CNV)))%>%mutate(CNV3=ifelse(is.na(CNV3),CNV,CNV3))%>%dplyr::select(-CNV)%>%dplyr::rename(CNV=CNV3)
 
 } else {
   categorized_data<- categorize_CNV(df)
@@ -1316,7 +421,7 @@ cowplot::plot_grid(G1,G2)
 
 out=categorized_data%>%dplyr::filter(CNV=="Unclassified")
 
-P5 =ggplot(categorized_data, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3)+ggtitle("Cluster_CNV2")
+P5 =ggplot(categorized_data, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=3)+scale_color_manual(values=CNV_colors) +ggtitle("Cluster_CNV2")
 P5
 
 ```
@@ -1447,7 +552,7 @@ Data_update_9=All_Sub_p%>%as.data.frame()%>%mutate(Group=out)%>%left_join(.,Clon
 High_ampli_data=Data_update_9%>%dplyr::filter(CNV=="High_level_ampli")
 
 # for the High level amplication with 6, 8, 10
-High_ampli_data_baf_0.5=High_ampli_data%>%dplyr::filter(BAF>0.45)
+High_ampli_data_baf_0.5=High_ampli_data%>%dplyr::filter(BAF>0.4)
 if(nrow(High_ampli_data_baf_0.5) >0){
  Test=sapply(High_ampli_data_baf_0.5$Norm_RDR,function(x) out=unlist(High_ampli_cal_CN(x,Clonaity_define$Value,CN_range=c(6,8,10))))%>%t()%>%as.data.frame()%>%left_join(.,Clonaity_define)
 
@@ -1475,6 +580,8 @@ No_high=Data_update_9%>%dplyr::filter(CNV!="High_level_ampli")%>%mutate(Value=if
 
 # correct NF1 information 
 Data_update_10=rbind(High_ampli_combine,No_high)%>%mutate(Group2=paste0(Group,":",round(Value,2)))%>%mutate(Group2=ifelse(CNV=="Normal","Normal",ifelse(Group2=="other:1","other:NA", Group2))) %>%arrange(Chromosome,Start)
+
+Data_update_10%>%dplyr::filter(Group2=="other:NA")
 ```
 
 
@@ -1495,8 +602,6 @@ P11 =ggplot(Data_update_10, aes(x=BAF, y=Norm_RDR,color=CNV)) + geom_point(size=
 ```{r,fig.width=12,fig.height=18,include=T}
 P11
 ```
-
-
 
 \newpage
 
@@ -1544,11 +649,13 @@ knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_s
 
 ```
 ```{r,include=T}
-CDKN2A=Data_update_10%>%dplyr::filter(grepl(",CDKN2A,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+CDKN2A=Data_update_10%>%dplyr::filter(grepl(",CDKN2A,|CDKN2A$",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
 
 if (CDKN2A$CN!=2) {
 knitr::kable(CDKN2A,caption = "CDKN2A somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
 }
+
+
 
 ```
 
@@ -1560,10 +667,32 @@ knitr::kable(Loss,caption = "Loss",booktabs = TRUE) %>%kableExtra::kable_styling
 
 ```
 
+\newpage 
+
+# Config setting for this sample
+```{r,include=T}
+if (config$tumor_type == "PDX"|grepl("PDX",Sample_name)) {
+ print(config$genomic_settings$PDX) 
+} else {
+  print(config$genomic_settings$tumor ) 
+  
+  }
+```
+
 
 ```{r}
 dir.create(file.path(Process_path,PT_ID))
-save(Data_update_10,Data_update_10_refine,file=file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
+save(Data_update_10,Data_update_10_refine,Bias_set,file=file.path(Process_path,PT_ID ,paste0(PT_ID,"_",Sample_name,"_CNV_clonality.rdata")))
+```
+```{r,eval=F}
+output_file <- paste0(config$PT_ID, "_", config$Sample_input, "_CNV.pdf")
+output_dir <- file.path(base_output_dir, config$PT_ID)
+
+# Render the RMarkdown file with custom output settings
+rmarkdown::render(
+  input = "1_step2_CNV.Rmd",
+  output_file = output_file,
+  output_dir = output_dir)
 ```
 
 
