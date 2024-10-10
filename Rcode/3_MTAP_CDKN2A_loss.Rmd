@@ -71,6 +71,19 @@ dir.create(file.path(Process_path,PT_ID,"MTAP_CDKN2A"))
 
 ```{r}
 
+base_output_dir=file.path(config$Path,"Report","MTAP_CDKA2A")
+    
+DIR=file.path(base_output_dir, config$PT_ID)
+pSubTitle <- paste0(PT_ID,"_",Sample_input,"__MTAP_CDKN2A_Loss.pdf")
+output_file=file.path(DIR,pSubTitle )
+
+if (file.exists( output_file)) {
+  quit()
+}
+```
+
+```{r}
+
 source(file.path(getwd(),"Rfunction.R"))
 
 ```
