@@ -1565,7 +1565,8 @@ plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene
   RD_bed=RD_raw_data%>%as.data.frame()%>%dplyr::filter( start>=min(Gene_chorom$start))%>%dplyr::filter( end<=max(Gene_chorom$end))%>%group_by(gene_name)%>%
       summarise(start=min(start),end=max(end))%>%arrange(start)%>% mutate(chr=unique(RD_raw_data$chr))%>%na.omit()%>%mutate(row_n=1:nrow(.))%>% mutate(y=ifelse(row_n%%2,0.8,0.6))
   }
- 
+  
+  
   
   # Call the GATK_Chrom_Gene_RD_2 function to get the necessary data
   colnames(RD_raw_data)=tolower(colnames(RD_raw_data))
@@ -1577,7 +1578,7 @@ plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene
   pp$data2height <- 100
   pp$ideogramheight <- 0
   pp$topmargin <- 10
-  
+ 
   # Extract data from the test object
   nchr=RD_raw_data$chr%>%unique()
   df <- Tumor_bbc_reform
@@ -1587,6 +1588,30 @@ plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene
   if (!is.null(Gene_chorom) & (isTRUE(plot_zoom)  ) ) {
     
     detail.region <-  regioneR::toGRanges(Gene_chorom,Tumor_bbc_reform,Main="",genome="hg38")
+    RD_bed$start <- as.numeric(RD_bed$start)
+    RD_bed$end <- as.numeric(RD_bed$end)
+    
+    # Check if the chromosome column is properly formatted (in case it's a factor or string)
+    RD_bed$chr <- as.character(RD_bed$chr)
+    
+    # If needed, print the structure to check the data types
+    str(RD_bed)
+    
+    # Create the region based on RD_bed
+    region <- data.frame(
+      chr = unique(RD_bed$chr),
+      start = min(RD_bed$start, na.rm = TRUE),
+      end = max(RD_bed$end, na.rm = TRUE)
+    )
+    
+    # Convert the region to a GRanges object
+    detail.region <- GRanges(
+      seqnames = region$chr,
+      ranges = IRanges(start = region$start-10000, end = region$end+10000)
+    )
+    
+                                                              
+    
     
     kp <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, plot.params = pp,plot.type = 3,zoom = detail.region)
     point_cex=2

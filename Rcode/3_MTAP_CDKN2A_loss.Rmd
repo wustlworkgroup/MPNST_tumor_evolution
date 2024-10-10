@@ -169,7 +169,7 @@ rdr_data=segment_results_by_gene[[1]]%>%dplyr::rename(rdr=mean_rdr)
 Choose_Seg_rdr=rdr_data%>%dplyr::filter(grepl("MTAP|CDKN2A",genes))
 Choose_seg_baf=list()
 for (i in 1:nrow(Choose_Seg_rdr)) {
-  Data=Choose_Seg_rdr[1,]
+  Data=Choose_Seg_rdr[i,]
   Baf_select =BAF_data_2%>%dplyr::filter(start>(Data$start-1))%>%dplyr::filter(end<(Data$end+1)) 
   #Baf_select =BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)%>%dplyr::filter(start>(Data$start-1))%>%dplyr::filter(end<(Data$end+1)) %>%dplyr::filter(alt_nucleotide!="N")
   Choose_seg_baf[[i]]=add_gene_names_to_BAF(Baf_select)
@@ -211,10 +211,8 @@ if (file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",paste0(Sample_name,"_
 #Test=plot_detected_segments_genelevel(RD_data_anno_norm,rdr_data,BAF_data_2,Gene_chorom=Choose_Seg_rdr,plot_zoom = T)
 ```
 
-
-```{r,fig.width=16,fig.height=10,include=T}
-cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=2)
-
+```{r,fig.width=16,fig.height=6,include=T}
+cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=1)
 ```
 
 
