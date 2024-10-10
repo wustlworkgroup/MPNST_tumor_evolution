@@ -1550,4 +1550,199 @@ plot_detected_segments <- function(RD_raw_data, segments,BAF_data,Gene_chorom=NU
 }
 
 
+# Function to plot the segments detected by detect_segments_in_rdr
+plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene_chorom=NULL,plot_zoom=F) {
+  # Load necessary libraries
+  library(karyoploteR)
+  library(ggplotify)
+  library(GenomicRanges)
+  library(CopyNumberPlots)
+  library(ensembldb)
+  library(EnsDb.Hsapiens.v86)
+  library(cowplot)
+  
+  if (!is.null(Gene_chorom)&(isTRUE(plot_zoom)  )) {
+  RD_bed=RD_raw_data%>%as.data.frame()%>%dplyr::filter( start>=min(Gene_chorom$start))%>%dplyr::filter( end<=max(Gene_chorom$end))%>%group_by(gene_name)%>%
+      summarise(start=min(start),end=max(end))%>%arrange(start)%>% mutate(chr=unique(RD_raw_data$chr))%>%na.omit()%>%mutate(row_n=1:nrow(.))%>% mutate(y=ifelse(row_n%%2,0.8,0.6))
+  }
+ 
+  
+  # Call the GATK_Chrom_Gene_RD_2 function to get the necessary data
+  colnames(RD_raw_data)=tolower(colnames(RD_raw_data))
+  Tumor_bbc_reform=RD_raw_data[,c("chr","start","end","rdr")]
+  colnames(Tumor_bbc_reform)=tolower(colnames(Tumor_bbc_reform))
+  # Set plot parameters
+  pp <- karyoploteR::getDefaultPlotParams(plot.type =5 )
+  pp$data1height <- 100
+  pp$data2height <- 100
+  pp$ideogramheight <- 0
+  pp$topmargin <- 10
+  
+  # Extract data from the test object
+  nchr=RD_raw_data$chr%>%unique()
+  df <- Tumor_bbc_reform
+  
+  s1 <- CopyNumberPlots:: loadSNPData(Tumor_bbc_reform)
+  
+  if (!is.null(Gene_chorom) & (isTRUE(plot_zoom)  ) ) {
+    
+    detail.region <-  regioneR::toGRanges(Gene_chorom,Tumor_bbc_reform,Main="",genome="hg38")
+    
+    kp <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, plot.params = pp,plot.type = 3,zoom = detail.region)
+    point_cex=2
+  } else if (!is.null(Gene_chorom)) {
+    detail.region <-  regioneR::toGRanges(Gene_chorom,Tumor_bbc_reform,Main="",genome="hg38")
+    kp <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, plot.params = pp,plot.type = 3) 
+    point_cex=0.3
+    kpPlotRegions(kp, data = detail.region, col = "#F30943", r0 = 0, r1 = 0.05, border = "blue")
+    
+  } else {
+    kp <- karyoploteR::plotKaryotype(genome = "hg38", chromosomes = nchr, plot.params = pp,plot.type = 3) 
+    point_cex=0.3
+  }
+  karyoploteR::kpAbline(kp, h = 0.5, col = "green")
+  karyoploteR::kpAbline(kp, h = 0.25, col = "black")
+  # Iterate through segments and plot them using kpPlotRegions
+  for (i in 1:nrow(segments)) {
+    Data=segments[i,]
+    segment_data <- GRanges(seqnames = segments$chr[i],
+                            ranges = IRanges(start = segments$start[i], end = segments$end[i]),
+                            names = segments$genes[i])
+    
+    kpPlotRegions(kp, data = segment_data, col = "#F30943", r0 = (Data$rdr)/2-0.02, r1 = (Data$rdr)/2+0.02, border = "#F30943")
+    
+    # Add text for each segment showing the mean RDR
+   # if (!is.null(Gene_chorom)&(isTRUE(plot_zoom)  )) {
+   #    kpText(kp, chr = segments$chr[i], x = (segments$start[i] + segments$end[i]) / 2,
+  #           y = 0.5, labels =as.character(Data$genes), cex = 0.8)
+      
+      
+  #  }
+  }
+  
+  
+  
 
+  
+  CopyNumberPlots::plotLRR(kp, s1, lrr.column = "rdr", r0 = 0, r1 = 1, labels = "Read depth ratio", ymin = 0, ymax = 2, add.axis = TRUE, axis.cex = 1, label.cex = 1, points.cex = point_cex, data.panel = 1) 
+  #p1 <- ggplotify::as.ggplot(plot_karyotype_grob_chr(nchr, Sample_name, df))
+  #  p1 <- ggplotify::as.ggplot(function() {plot_karyotype_chr (nchr, Sample_name, df, s1)} )
+  
+  Tumor_baf=BAF_data[,c("chr","start","end","baf")]%>%as.data.frame()
+  s2 <- CopyNumberPlots:: loadSNPData(Tumor_baf)
+  karyoploteR::kpAbline(kp, h = 0.5, col = "green",data.panel = 2)
+  
+  if (!is.null(Gene_chorom)&(isTRUE(plot_zoom)  )) {
+    for (i in 1:nrow(RD_bed)) {
+      Data=RD_bed[i,]
+
+      segment_data <- GRanges(seqnames = Data$chr,
+                              ranges = IRanges(start = Data$start, end =Data$end),
+                              names = Data$gene_name)
+
+
+      kpPlotRegions(kp, data = segment_data, col = "blue", r0 = 0.9, r1 =1, border = "#F30943",data.panel = 2)
+      kpText(kp, chr = Data$chr, x =Data$start+(Data$end-Data$start)/2,y = Data$y, labels =as.character(Data$gene_name), cex = 0.8,data.panel = 2)
+      # Add text for each segment showing the mean RDR
+      # if (!is.null(Gene_chorom)&(isTRUE(plot_zoom)  )) {
+      #    kpText(kp, chr = segments$chr[i], x = (segments$start[i] + segments$end[i]) / 2,
+      #           y = 0.5, labels =as.character(Data$genes), cex = 0.8)
+
+
+      #  }
+
+    }
+  }
+  
+  
+  CopyNumberPlots::plotBAF(kp,s2, r0=0, r1=1, labels = "BAF", points.col = "orange", points.cex = point_cex, add.axis = TRUE, points.pch = 16,label.cex = 1, axis.cex = 1, data.panel = 2)
+  # return(p1)
+  
+  
+}
+
+annotate_with_exons <- function(input_data, transcript_id, ensdb = EnsDb.Hsapiens.v86) {
+  # Load necessary libraries
+  library(GenomicRanges)
+  library(ensembldb)
+  library(AnnotationFilter)
+  
+  # Ensure input data has columns: "chr", "start", "end"
+  if (!all(c("chr", "start", "end") %in% colnames(input_data))) {
+    stop("Input data must have columns: 'chr', 'start', 'end'")
+  }
+  
+  # Create GRanges object for the input data
+  input_data$chr=gsub("chr","",input_data$chr)
+  input_gr <- GRanges(seqnames = input_data$chr,
+                      ranges = IRanges(start = input_data$start, end = input_data$end))
+  
+  # Fetch exons for the specified transcript
+  exons_for_transcript <- ensembldb::exons(ensdb, filter = AnnotationFilter::TxIdFilter(transcript_id))
+  
+  # Find overlaps between input data and exons
+  overlaps <- findOverlaps(input_gr, exons_for_transcript)
+  
+  # Initialize columns for exon info in input data
+  input_data$exon_id <- NA
+  input_data$exon_start <- NA
+  input_data$exon_end <- NA
+  
+  # Annotate input data with exon information
+  for (i in queryHits(overlaps)) {
+    input_index <- queryHits(overlaps)[i]
+    exon_index <- subjectHits(overlaps)[i]
+    
+    # Label the input data with exon info
+    input_data$exon_id[input_index] <- exons_for_transcript$exon_id[exon_index]
+    input_data$exon_start[input_index] <- start(exons_for_transcript[exon_index])
+    input_data$exon_end[input_index] <- end(exons_for_transcript[exon_index])
+  }
+  
+  # Return the annotated data
+  input_data$transcript_id=transcript_id
+  input_data$chr=paste0("chr",input_data$chr)
+  return(input_data)
+}
+
+
+# Function to annotate BAF data with exons and calculate the mean BAF for overlapping regions
+annotate_with_exons_and_baf <- function(baf_data, exons_for_transcript) {
+  
+  # Initialize an empty list to store results
+  annotated_results <- list()
+  
+  # Loop over each exon or segment
+  for (i in 1:nrow(exons_for_transcript)) {
+    # Define current exon range
+    current_exon <- exons_for_transcript[i, ]
+    # Filter BAF data that overlaps the current exon range
+    overlapping_baf <- baf_data %>%
+      dplyr::filter(chr == current_exon$chr )%>%dplyr::filter( start >= current_exon$start)%>%dplyr::filter(end <= current_exon$end)
+    #      chr == current_exon$chr &  # Match chromosome
+    #    start >= current_exon$start)
+    
+    
+    # If there are overlapping BAF entries, calculate the mean BAF
+    if (nrow(overlapping_baf) > 0) {
+      mean_baf <- mean(overlapping_baf$baf, na.rm = TRUE)
+    } else {
+      mean_baf <- NA  # If no overlapping BAF, assign NA
+    }
+    
+    # Add the result to the list
+    annotated_results[[i]] <- data.frame(
+      chr = current_exon$chr,
+      start = current_exon$start,
+      end = current_exon$end,
+      gene_name = current_exon$gene_name,
+      rdr = current_exon$rdr,
+      mean_baf = mean_baf
+    )
+  }
+  
+  # Combine the list into a single data frame
+  annotated_data <- bind_rows(annotated_results)
+  annotated_data2=exons_for_transcript%>%mutate(baf=annotated_data$mean_baf)
+  return(annotated_data2)
+}
