@@ -151,7 +151,7 @@ if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
   save(RD_data_anno,BAF_data,file=file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
 } 
 
-load(file.path(Process_path,PT_ID,filename))
+load(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
 RD_data_anno_norm=RD_data_anno%>%mutate(rdr=rdr/Bias_set) #Bias_set is from step2
 #BAF_data_anno
  
