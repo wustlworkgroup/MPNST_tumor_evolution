@@ -139,7 +139,7 @@ if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
  
 } 
 
-load(file.path(Process_path,PT_ID,filename))
+load(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
 RD_data_anno_norm=RD_data_anno%>%mutate(rdr=rdr/Bias_set) #Bias_set is from step2
 #BAF_data_anno
 BAF_data_2=BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%dplyr::filter(alt_nucleotide!="N")%>%dplyr::filter(alt_count>4)%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)

@@ -91,8 +91,8 @@ if (file.exists( output_file)) {
 ```{r,include=F}
 #download Chrosmome_cytobank.rdata from synapse
 if (!file.exists(file.path(Reference_path, "Chrosmome_cytobank.rdata") )) {
-  Password =rstudioapi::askForPassword("Enter your synaspe password:")
-  synapser::synLogin(email=Email,password =Password)
+  Password=read.table(PW_path)%>%as.character()
+  synapser::synLogin(email = Email, password = Password)
   synapser::synGet("syn62173943",downloadLocation = Reference_path,ifcollision="keep.local")
 }
 load("/Volumes/lyu.yang/MAC_1/R/Public_database/Reference/Chrosmome_cytobank.rdata")
