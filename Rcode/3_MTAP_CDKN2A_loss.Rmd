@@ -142,7 +142,9 @@ if (!file.exists(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename) )){
 load(file.path(Process_path,PT_ID,"MTAP_CDKN2A",filename))
 RD_data_anno_norm=RD_data_anno%>%mutate(rdr=rdr/Bias_set) #Bias_set is from step2
 #BAF_data_anno
-BAF_data_2=BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%dplyr::filter(alt_nucleotide!="N")%>%dplyr::filter(alt_count>4)%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)
+ 
+BAF_data_2=BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%dplyr::filter(alt_nucleotide!="N")%>%dplyr::filter(alt_count>2)%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)
+
 
 
 ```
@@ -169,12 +171,27 @@ Choose_seg_baf=list()
 for (i in 1:nrow(Choose_Seg_rdr)) {
   Data=Choose_Seg_rdr[1,]
   Baf_select =BAF_data_2%>%dplyr::filter(start>(Data$start-1))%>%dplyr::filter(end<(Data$end+1)) 
+  #Baf_select =BAF_data%>%mutate(baf=alt_count/(ref_count+alt_count))%>%mutate(baf=ifelse(baf>0.5,1-baf,baf))%>%mutate(start=position,end=position)%>%dplyr::filter(start>(Data$start-1))%>%dplyr::filter(end<(Data$end+1)) %>%dplyr::filter(alt_nucleotide!="N")
   Choose_seg_baf[[i]]=add_gene_names_to_BAF(Baf_select)
 
 }
+
 Choose_seg_baf2=do.call("rbind", Choose_seg_baf)
 Gene_list_in_region=Choose_Seg_rdr$genes%>%strsplit(.,",")%>%unlist()%>%.[!grepl("unknown",.)]
-Choose_seg_baf_gene=Choose_seg_baf2%>%group_by(gene_name)%>%summarise(baf=mean(baf))
+```
+
+
+```{r,include=T}
+if (nrow(Choose_seg_baf2)>0) {
+  
+  
+ Choose_seg_baf_gene=Choose_seg_baf2%>%group_by(gene_name)%>%summarise(baf=mean(baf))
+ knitr::kable(Choose_seg_baf_gene,caption = "baf of genes in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+ Gene_baf=Choose_seg_baf2[,c(1:4,7,11)]%>%as.data.frame()
+ knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+
+ 
+}
 
 ```
 
@@ -208,8 +225,6 @@ cowplot::plot_grid( segment_plot,segment_plot_detail,nrow=2)
 Choose_Seg_rdr2=Choose_Seg_rdr%>%mutate(genes=gsub(",", ", ",genes))
 knitr::kable(Choose_Seg_rdr2,caption =   "Segmentation")%>%kableExtra::kable_styling(latex_options = c("scale_down"))%>%
   kableExtra::column_spec(4, width = "5cm")
-# 
-knitr::kable(Choose_seg_baf_gene,caption = "baf of genes in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
 
 ```
 
@@ -224,22 +239,12 @@ knitr::kable(Gene_GATK_seg[,c("Sample","Chromosome","Start","End","BAF","CNV","N
 ```
 
 
-```{r}
-
-Gene_baf=Choose_seg_baf2[,c(1:4,7,11)]%>%as.data.frame()
-if (nrow (Gene_baf) >0) {
-  
-  knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
-
-}
-```
-
 
 ```{r}
 Gene_rdr=RD_data_anno_norm%>%dplyr::filter(start> min(Choose_Seg_rdr$start-1))%>%dplyr::filter(end< max(Choose_Seg_rdr$end+1))
-if (nrow (Gene_baf) >0) {
+if (nrow (Gene_rdr) >0) {
   
-  knitr::kable(Gene_baf,caption = "BAF in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
+  knitr::kable(Gene_rdr,caption = "rdr in bed")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
 
 }
 ```
