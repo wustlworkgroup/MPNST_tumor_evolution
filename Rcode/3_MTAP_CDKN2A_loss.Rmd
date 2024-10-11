@@ -75,6 +75,17 @@ source(file.path(getwd(),"Rfunction.R"))
 
 ```
 
+```{r}
+pSubTitle <- paste0(config$PT_ID,"_",config$Sample_input,"__MTAP_CDKN2A_Loss.pdf")
+base_output_dir=file.path(config$Path,"Report","MTAP_CDKA2A")
+DIR=file.path(base_output_dir, config$PT_ID)
+
+if ( file.exists( file.path(DIR,pSubTitle))){
+  
+ quit()  
+}
+```
+
 
 ```{r}
 # The data from step1
@@ -183,8 +194,6 @@ Gene_list_in_region=Choose_Seg_rdr$genes%>%strsplit(.,",")%>%unlist()%>%.[!grepl
 
 ```{r,include=T}
 if (nrow(Choose_seg_baf2)>0) {
-  
-  
  Choose_seg_baf_gene=Choose_seg_baf2%>%group_by(gene_name)%>%summarise(baf=mean(baf))
  knitr::kable(Choose_seg_baf_gene,caption = "baf of genes in segments")%>%kableExtra::kable_styling(latex_options = c("scale_down"))
  Gene_baf=Choose_seg_baf2[,c(1:4,7,11)]%>%as.data.frame()
