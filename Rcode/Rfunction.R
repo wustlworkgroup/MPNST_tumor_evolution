@@ -1587,7 +1587,7 @@ plot_detected_segments_genelevel <- function(RD_raw_data, segments,BAF_data,Gene
   
   if (!is.null(Gene_chorom) & (isTRUE(plot_zoom)  ) ) {
     
-    detail.region <-  regioneR::toGRanges(Gene_chorom,Tumor_bbc_reform,Main="",genome="hg38")
+    #detail.region <-  regioneR::toGRanges(Gene_chorom,Tumor_bbc_reform,Main="",genome="hg38")
     RD_bed$start <- as.numeric(RD_bed$start)
     RD_bed$end <- as.numeric(RD_bed$end)
     

@@ -643,9 +643,13 @@ knitr::kable(High_ami,caption = "High amplication",longtable = TRUE) %>%kableExt
 
 \newpage
 ```{r,include=T}
-NF1=Data_update_10%>%dplyr::filter(grepl(",NF1,",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+NF1=Data_update_10%>%dplyr::filter(grepl(",NF1,|,NF1$",Gene_list))%>%.[c("Chromosome","Gene_list","Start","End" ,"Norm_RDR","BAF","Group2","CN")]%>%mutate(Gene_list=gsub(",", ", ", Gene_list))
+
 if (NF1$CN!=2) {
-knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")}
+    knitr::kable(NF1,caption = "NF1 somatic",booktabs = TRUE) %>%
+      kableExtra::kable_styling(latex_options =  c("scale_down","hold_position"))%>%kableExtra::column_spec(column=2, width = "5cm")
+  
+  }
 
 ```
 ```{r,include=T}
