@@ -1,15 +1,15 @@
 default:
   document:
     author: "Yang Lyu"
-  PT_ID: "JH-2-002"
-  Sample_input: 3
+  PT_ID: "WU-487"
+  Sample_input: 2
   tumor_type: "Tumor" # " PDX" or  "Tumor"
   Path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution"
   PW_path: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Rscript/Synapse_pd.txt"
   Email: "lyu.yang@wustl.edu"
   Reference_path: "/Volumes/lyu.yang/MAC_1/R/Public_database/Reference"
   base_output_dir: "/Volumes/lyu.yang/MAC_1/R/Project/14_MPNST_tumor_evolution/Report"
-  Cluster_number: 15
+  Cluster_number: 15 # default 15
   
   genomic_settings:
     tumor:
