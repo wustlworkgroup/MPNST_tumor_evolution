@@ -73,6 +73,8 @@ Process_path=file.path(Path,"Processed")
 base_output_dir <- paste0(config$Path,"/","Report")
 Public_database_path="/Volumes/lyu.yang/MAC_1/R/Public_database"
 ```
+
+
 ```{r,include=F}
 # Check the version of the synapser package
 synapser_version <- packageVersion("synapser")
@@ -191,16 +193,42 @@ listSynapseFiles <- function(synID) {
   return(do.call("rbind", fileList))
 }
 
+
 # Function to process Germline CNV data for a given patient ID
 processGermlineCNV <- function(Patient_ID, Process_Path, Sample_anno) {
-  # Filter sample information for the given patient ID
+
+  
+  Download_path <- file.path(Process_Path, "Germline_CNV")
+  all_files=list.files(Download_path)
+  
+  if(grepl(Patient_ID,all_files)){
+    filename=all_files[grepl(Patient_ID,all_files)]
+    return(file_name)
+    output=list()
+    for ( i in filename) {
+    filepath=file.path(Download_path,i)
+    SEG_data <- readr::read_tsv(filepath, show_col_types = FALSE) %>%
+                tidyr::separate(ID, c("Type", "Chromosome", "Start", "End"), sep = "_") %>%
+                mutate(Start = as.numeric(Start), End = as.numeric(End))
+    
+    Gene_name <- Gene_annotation_for_CNV(SEG_data)
+    
+    colnames(Gene_name)=gsub(".*\\.","",colnames(Gene_name))
+    # remove load reads data
+    Gene_name2 <- Gene_name %>% dplyr::filter(NP > 100)%>%dplyr::filter(ALT!=".")
+    # Returning filtered data based on NP
+    output[[filename]]=Gene_name2%>%mutate(Filename=filename)
+    }
+     Output2=do.call(rbind,output)
+  } else {
+  
+    # Filter sample information for the given patient ID
   PT_Sample_info <- Sample_anno %>% 
                     dplyr::filter(individualID == Patient_ID)
 
   # Filter to get only 'Normal' samples
   Normal_samples <- PT_Sample_info %>% 
-                    dplyr::filter(tumorType == "Normal")
- 
+                    dplyr::filter(tumorType == "Normal")  
   # Initialize a list to hold Germline CNV data
   Germline_CNV <- list()
   # Loop through each batch identifier in Normal samples
@@ -214,6 +242,7 @@ processGermlineCNV <- function(Patient_ID, Process_Path, Sample_anno) {
       Germline_CNV[[i]] <- listSynapseFiles(WU_Germline_syn) %>% 
                            dplyr::filter(grepl(Patient_ID, name))
     }
+    
   }
  
   # Combine lists into one dataframe
@@ -243,6 +272,98 @@ processGermlineCNV <- function(Patient_ID, Process_Path, Sample_anno) {
  
  Output2=do.call(rbind,output)
 }
+}
+
+processGermlineCNV_2 <- function(Patient_ID, Process_Path, Sample_anno) {
+  
+  Download_path <- file.path(Process_Path, "Germline_CNV")
+  all_files <- list.files(Download_path)
+  
+  # Check if any files match the Patient_ID
+  if (any(grepl(Patient_ID, all_files))) {
+    filenames <- all_files[grepl(Patient_ID, all_files)]
+    output <- list()  # Initialize output list
+
+    for (i in filenames) {
+      filepath <- file.path(Download_path, i)
+      SEG_data <- readr::read_tsv(filepath, show_col_types = FALSE) %>%
+                  tidyr::separate(ID, c("Type", "Chromosome", "Start", "End"), sep = "_") %>%
+                  mutate(Start = as.numeric(Start), End = as.numeric(End))
+      
+      Gene_name <- Gene_annotation_for_CNV(SEG_data)
+       
+      colnames(Gene_name) <- gsub(".*\\.", "", colnames(Gene_name))
+      # Filter genes based on NP and ALT conditions
+      Gene_name_filtered <- Gene_name %>%
+                            dplyr::filter(NP > 100) %>%
+                            dplyr::filter(ALT != ".")
+      # Store the result with filename information
+      output[[i]] <- Gene_name_filtered %>% mutate(Filename = i)
+    }
+    # Combine all the output data frames into one
+    Output2 <- do.call(rbind, output)
+    return(Output2)  # Return the combined result
+  } else {
+    # Handle the case where no local file matches
+    PT_Sample_info <- Sample_anno %>% 
+                      dplyr::filter(individualID == Patient_ID)
+    
+    # Filter only 'Normal' samples
+    Normal_samples <- PT_Sample_info %>% 
+                      dplyr::filter(tumorType == "Normal")
+    
+    Germline_CNV <- list()  # Initialize list for Germline CNV data
+
+    # Loop through Normal samples' batch to get relevant Synapse files
+    for (i in Normal_samples$batch) {
+      if (grepl("JH", i)) {
+        JH_Germline_syn <- "syn61986445"
+        Germline_CNV[[i]] <- listSynapseFiles(JH_Germline_syn) %>% 
+                             dplyr::filter(grepl(Patient_ID, name))
+      } else if (grepl("WU", i)) {
+        WU_Germline_syn <- "syn61986581"
+        Germline_CNV[[i]] <- listSynapseFiles(WU_Germline_syn) %>% 
+                             dplyr::filter(grepl(Patient_ID, name))
+      }
+    }
+    
+    # Combine the Synapse files data
+    Germline_CNV_combine <- do.call("rbind", Germline_CNV)
+    
+    output <- list()  # Initialize list for processed files
+
+    # Download and process each file from Synapse
+    for (i in Germline_CNV_combine$synid) {
+      fileEntity <- synapser::synGet(i)
+      filename <- fileEntity$properties$name
+      filepath <- file.path(Download_path, filename)
+      
+      # Download the file
+      synapser::synGet(i, downloadLocation = Download_path, ifcollision = "keep.local")
+      
+      SEG_data <- readr::read_tsv(filepath, show_col_types = FALSE) %>%
+                  tidyr::separate(ID, c("Type", "Chromosome", "Start", "End"), sep = "_") %>%
+                  mutate(Start = as.numeric(Start), End = as.numeric(End))
+      
+      Gene_name <- Gene_annotation_for_CNV(SEG_data)
+      
+      colnames(Gene_name) <- gsub(".*\\.", "", colnames(Gene_name))
+      # Filter based on NP and ALT values
+      Gene_name_filtered <- Gene_name %>%
+                            dplyr::filter(NP > 100) %>%
+                            dplyr::filter(ALT != ".")
+      
+      # Store result with filename information
+      output[[filename]] <- Gene_name_filtered %>% mutate(Filename = filename)
+    }
+    
+    # Combine all the processed data into one data frame
+    Output2 <- do.call(rbind, output)
+    return(Output2)  # Return the combined result
+  }
+}
+
+
 
 process_somatic_CNV <- function(Patient_ID, Process_path) {
 
@@ -326,8 +447,12 @@ knitr::kable(PT_Sample_info[,c(1:6)],caption = "Sample information")%>%kableExtr
 ```
 
 ```{r,include=F}
+ if (grepl("MN-",PT_ID)){
+   PT_ID=gsub("MN-","MN",PT_ID)
+ }
 if (! file.exists(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_RD_BAF.rdata")))) {
- Germline_CNV=processGermlineCNV(PT_ID, Process_path, All_Sample_anno)
+
+ Germline_CNV=processGermlineCNV_2(PT_ID, Process_path, All_Sample_anno)
  Somatic_CNV=process_somatic_CNV (PT_ID,Process_path=Process_path)
  Samples=data.frame(Sample_name=names(Somatic_CNV),Sample_n=1:length(names(Somatic_CNV)))
 } else {
@@ -335,8 +460,7 @@ if (! file.exists(file.path(Process_path,PT_ID,paste0(PT_ID,"_Germline_somatic_R
   Samples=data.frame(Sample_name=names(Somatic_CNV),Sample_n=1:length(names(Somatic_CNV)))
 }
 
-
-
+ 
 ```
 
 

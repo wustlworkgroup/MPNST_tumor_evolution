@@ -63,7 +63,9 @@ library(ggplot2)
 
 ```{r,include=F}
 PT_ID <- config$PT_ID
-
+if (grepl("MN-",PT_ID)){
+   PT_ID=gsub("MN-","MN",PT_ID)
+ }
 Email <- config$Email
 Reference_path <- config$Reference_path
 Sample_input=config$Sample_input%>%as.integer()
@@ -466,7 +468,7 @@ Data=All_Sub_p %>%dplyr::filter(!CNV %in%c("LOH","Hetloss","Trisomy")) %>%dplyr:
 out=group_numbers_with_clonality(Data$Subclone_p,result[[2]], threshold=0.1) 
 grouped_other_df= Data%>%as.data.frame()%>%mutate(Group=out)
 Other=grouped_other_df%>%dplyr::filter(Group=="other")
-if(nrow(Other)>0) {
+if(nrow(Other)>2) {
   
   data=Other$Subclone_p%>%na.omit()
   Group_number=grouped_other_df$Group%>%sort()%>%as.integer()%>%na.omit()%>%max()+1
